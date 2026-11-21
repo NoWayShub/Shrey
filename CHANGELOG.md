@@ -1,0 +1,30 @@
+# Changelog
+
+All notable changes to **Shrey** are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [0.0.1-beta] - 2026-11-21
+
+### Added
+- **Initial Public Beta Source Release:** Native Android media downloader powered by `yt-dlp` and `FFmpeg`.
+- **Extraction Engine:** Mutex-protected `EngineCoordinator` integrating `youtubedl-android:0.18.1` and `:ffmpeg:0.18.1`.
+- **Format Selection & Analysis:** Extraction and inspection of actual format IDs, bitrates, codecs, resolutions (up to 4K / 2160p), frame rates, and estimated vs. exact file sizes.
+- **Four Download Modes:**
+  - Video with Audio (direct stream muxing or FFmpeg merge).
+  - Audio Only (original stream or transcoding to M4A, MP3, Opus).
+  - Video Only (isolated stream extraction).
+  - Thumbnail Only (OkHttp TLS fetch with Bitmap conversion).
+- **Persistent Queue & Storage:** Room database queue, MediaStore atomic publishing (`Movies/Shrey`, `Music/Shrey`, `Pictures/Shrey`), SAF custom directory support, and Android 14/15/16 `dataSync` Foreground Service with cancellation and progress notifications.
+- **Liquid Glass Interface:** Dark (`#08090B`) and Light (`#F4F5F8`) themes, Full/Reduced glass blur modes, and tactile feedback.
+- **Comprehensive Unit Testing:** 29 automated unit and Robolectric tests covering URL validation, JSON parsing, format mapping, progress mapping, database persistence, and UI flows.
+- **Open-Source Compliance:** GNU General Public License v3.0 (`LICENSE`), comprehensive third-party attributions (`LICENSES.md`), and build documentation (`docs/BUILDING.md`).
+
+### Known Limitations in v0.0.1-beta
+- YouTube JavaScript challenge runtime (`yt-dlp-ejs`) is not bundled in `youtubedl-android:0.18.1`; status is reported live in Settings diagnostics.
+- Floating bottom navigation overlays content on Home and Settings (scheduled for fix in v0.0.2).
+- Action button labels may truncate on narrow viewports on the Downloads screen (scheduled for fix in v0.0.2).
+- Physical testing confirmed for 4K video download on Samsung Galaxy device; audio transcoding and video-only modes require broader device validation.

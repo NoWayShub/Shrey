@@ -1,0 +1,6 @@
+{
+  "name": "Shrey",
+  "description": "Native Android media downloader powered by yt-dlp and FFmpeg with an original Liquid Glass interface.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

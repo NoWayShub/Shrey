@@ -1,0 +1,79 @@
+<resources>
+    <string name="app_name">Shrey</string>
+    <string name="app_tagline">Your media. Your way.</string>
+    <string name="app_version_display">Version 0.0.1</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_downloads">Downloads</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Home -->
+    <string name="home_url_placeholder">Paste a media link</string>
+    <string name="home_analyze_action">Analyze Link</string>
+    <string name="home_analyzing_action">Analyzing…</string>
+    <string name="home_paste_cd">Paste link from clipboard</string>
+    <string name="home_clear_cd">Clear link</string>
+    <string name="home_empty_title">Ready when you are</string>
+    <string name="home_empty_body">Paste or share a supported link to inspect real streams, formats, and local download options.</string>
+    <string name="home_engine_initializing">Preparing local extraction engine…</string>
+    <string name="home_engine_ready">Local yt-dlp &amp; FFmpeg ready</string>
+    <string name="home_engine_retry">Retry Engine</string>
+
+    <!-- Preview & Modes -->
+    <string name="mode_video_audio">Video</string>
+    <string name="mode_audio_only">Audio</string>
+    <string name="mode_video_only">Video Only</string>
+    <string name="mode_thumbnail_only">Thumbnail</string>
+    <string name="preview_download_action">Download</string>
+    <string name="preview_queued_action">Queued</string>
+    <string name="preview_quality_label">Quality</string>
+    <string name="preview_audio_format_label">Output Format</string>
+    <string name="preview_thumbnail_format_label">Image Format</string>
+    <string name="preview_technical_details">Technical Details</string>
+    <string name="preview_best_available">Best Available</string>
+    <string name="preview_requires_merge">Video + Audio merge (FFmpeg)</string>
+    <string name="preview_direct_stream">Direct combined stream</string>
+    <string name="preview_estimated_size">Est. %1$s</string>
+    <string name="preview_live_warning">Live streams are not supported in Shrey v0.0.1.</string>
+
+    <!-- Downloads -->
+    <string name="downloads_title">Downloads</string>
+    <string name="downloads_section_active">Active</string>
+    <string name="downloads_section_queued">Queued</string>
+    <string name="downloads_section_completed">Completed</string>
+    <string name="downloads_section_failed">Failed</string>
+    <string name="downloads_empty_title">No downloads yet</string>
+    <string name="downloads_empty_body">Analyzed links you save will appear here with real-time progress and transfer speed.</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_open">Open</string>
+    <string name="action_share">Share</string>
+    <string name="action_remove">Remove</string>
+    <string name="action_delete_file">Delete File</string>
+    <string name="action_view_details">Details</string>
+
+    <!-- Library -->
+    <string name="library_title">Library</string>
+    <string name="library_filter_all">All</string>
+    <string name="library_filter_videos">Videos</string>
+    <string name="library_filter_audio">Audio</string>
+    <string name="library_filter_images">Images</string>
+    <string name="library_empty_title">Your library is empty</string>
+    <string name="library_empty_body">Completed videos, audio tracks, and thumbnails saved on this device will appear here.</string>
+    <string name="library_file_missing">File removed outside Shrey</string>
+
+    <!-- Settings & About -->
+    <string name="settings_title">Settings</string>
+    <string name="about_title">About Shrey</string>
+    <string name="about_description">Shrey is a local-first Android media downloader built around yt-dlp and FFmpeg. Extraction, conversion, and storage happen directly on your device without accounts, subscriptions, or remote relay servers.</string>
+    <string name="about_privacy_statement">Privacy: Shrey does not collect analytics, telemetry, or personal data. Network requests are made directly from your device to fetch media metadata, streams, and thumbnails from the URLs you submit.</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_downloads">Downloads</string>
+    <string name="notification_channel_downloads_desc">Real-time progress and completion updates for local media downloads</string>
+    <string name="notification_downloading_title">Downloading media</string>
+    <string name="notification_completed_title">Download complete</string>
+    <string name="notification_failed_title">Download failed</string>
+</resources>
