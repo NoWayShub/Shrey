@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Shrey</string>
     <string name="app_tagline">Your media. Your way.</string>
-    <string name="app_version_display">Version 0.0.1</string>
+    <string name="app_version_display">Version 0.0.2</string>
 
     <!-- Navigation -->
     <string name="nav_home">Home</string>
@@ -36,7 +36,7 @@
     <string name="preview_requires_merge">Video + Audio merge (FFmpeg)</string>
     <string name="preview_direct_stream">Direct combined stream</string>
     <string name="preview_estimated_size">Est. %1$s</string>
-    <string name="preview_live_warning">Live streams are not supported in Shrey v0.0.1.</string>
+    <string name="preview_live_warning">Live streams are not supported in Shrey v0.0.2.</string>
 
     <!-- Downloads -->
     <string name="downloads_title">Downloads</string>

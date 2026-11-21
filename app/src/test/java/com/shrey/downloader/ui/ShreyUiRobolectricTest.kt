@@ -1,6 +1,8 @@
 package com.shrey.downloader.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
@@ -14,10 +16,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -28,7 +32,9 @@ import com.shrey.downloader.core.design.ShreyNavDestination
 import com.shrey.downloader.core.design.ShreyTheme
 import com.shrey.downloader.core.engine.FormatSelectionMapper
 import com.shrey.downloader.domain.model.AudioOutputFormat
+import com.shrey.downloader.domain.model.DownloadItem
 import com.shrey.downloader.domain.model.DownloadMode
+import com.shrey.downloader.domain.model.DownloadStage
 import com.shrey.downloader.domain.model.EngineDiagnostics
 import com.shrey.downloader.domain.model.EngineState
 import com.shrey.downloader.domain.model.MediaFormat
@@ -37,6 +43,8 @@ import com.shrey.downloader.domain.model.ShreySettings
 import com.shrey.downloader.domain.model.ThemeMode
 import com.shrey.downloader.domain.model.ThumbnailCandidate
 import com.shrey.downloader.domain.model.ThumbnailOutputFormat
+import com.shrey.downloader.feature.downloads.DownloadsScreenContent
+import com.shrey.downloader.feature.downloads.DownloadsUiState
 import com.shrey.downloader.feature.home.HomeScreenContent
 import com.shrey.downloader.feature.home.HomeUiState
 import com.shrey.downloader.feature.home.MediaPreviewCard
@@ -251,5 +259,101 @@ class ShreyUiRobolectricTest {
         assertEquals("library", selected)
         composeRule.onNodeWithTag("nav_settings").performClick()
         assertEquals("settings", selected)
+    }
+
+    @Test
+    fun `downloads completed actions render cleanly on narrow 360dp width and respond to clicks`() {
+        var opened = false
+        var shared = false
+        var hidden = false
+        val completedItem = DownloadItem(
+            id = "job_4k",
+            sourceUrl = "https://youtube.com/watch?v=demo4k",
+            title = "4K Nature Documentary Sample",
+            creator = "Studio Archive",
+            thumbnailUrl = null,
+            selectedFormatId = "313+251",
+            formatSelector = "bestvideo+bestaudio",
+            qualityLabel = "2160p",
+            mode = DownloadMode.VIDEO_AUDIO,
+            outputContainer = "mp4",
+            audioOutputFormat = AudioOutputFormat.ORIGINAL,
+            thumbnailOutputFormat = ThumbnailOutputFormat.ORIGINAL,
+            requiresMerge = true,
+            stage = DownloadStage.COMPLETED,
+            progressPercent = 100f,
+            downloadedBytes = 128_000_000L,
+            totalBytes = 128_000_000L,
+            speedText = null,
+            etaSeconds = null,
+            statusMessage = "Saved",
+            destinationTreeUri = null,
+            destinationUri = "content://media/external/video/media/42",
+            outputDisplayName = "4K Nature Documentary Sample.mp4",
+            mimeType = "video/mp4",
+            createdAt = 1_700_000_000_000L,
+            startedAt = 1_700_000_001_000L,
+            completedAt = 1_700_000_010_000L,
+            lastError = null,
+            technicalError = null,
+            retryCount = 0
+        )
+
+        composeRule.setContent {
+            ShreyTheme {
+                Box(modifier = Modifier.width(360.dp)) {
+                    DownloadsScreenContent(
+                        state = DownloadsUiState(completed = listOf(completedItem)),
+                        onCancel = {},
+                        onRetry = {},
+                        onRemoveHistory = { hidden = true },
+                        onDeleteFile = {},
+                        onOpenFile = { opened = true },
+                        onShareFile = { shared = true },
+                        contentBottomPadding = PaddingValues(bottom = 124.dp)
+                    )
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("top_gradual_blur").assertIsDisplayed()
+        composeRule.onNodeWithTag("download_open_job_4k").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("download_share_job_4k").assertIsDisplayed().performClick()
+        composeRule.onNodeWithContentDescription("Hide from history").assertIsDisplayed().performClick()
+        composeRule.onNodeWithContentDescription("Delete file").assertIsDisplayed()
+        assertTrue(opened)
+        assertTrue(shared)
+        assertTrue(hidden)
+    }
+
+    @Test
+    fun `home and settings render subtle top gradual blur overlay`() {
+        composeRule.setContent {
+            ShreyTheme {
+                HomeScreenContent(
+                    urlInput = "",
+                    uiState = HomeUiState.Idle,
+                    engineState = readyEngine,
+                    onUrlChanged = {},
+                    onPasteClick = {},
+                    onClearClick = {},
+                    onAnalyzeClick = {},
+                    onRetryEngine = {},
+                    onModeSelected = {},
+                    onOptionSelected = {},
+                    onAudioFormatSelected = {},
+                    onThumbnailFormatSelected = {},
+                    onToggleTechnicalDetails = {},
+                    onStartDownload = {},
+                    onOpenDownloads = {},
+                    onOpenSettings = {},
+                    contentBottomPadding = PaddingValues(bottom = 124.dp)
+                )
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("top_gradual_blur").assertIsDisplayed()
     }
 }

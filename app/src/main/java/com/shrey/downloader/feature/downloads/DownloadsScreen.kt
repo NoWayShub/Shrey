@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
@@ -28,12 +30,14 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,8 +56,10 @@ import coil.compose.AsyncImage
 import com.shrey.downloader.core.design.ShreyEmptyState
 import com.shrey.downloader.core.design.ShreyGlassButton
 import com.shrey.downloader.core.design.ShreyGlassCard
+import com.shrey.downloader.core.design.ShreyGlassIconButton
 import com.shrey.downloader.core.design.ShreyProgressBar
 import com.shrey.downloader.core.design.ShreyThemeTokens
+import com.shrey.downloader.core.design.ShreyTopGradualBlur
 import com.shrey.downloader.core.utilities.Formatters
 import com.shrey.downloader.domain.model.DownloadItem
 import com.shrey.downloader.domain.model.DownloadStage
@@ -115,6 +122,13 @@ fun DownloadsScreenContent(
     modifier: Modifier = Modifier
 ) {
     val palette = ShreyThemeTokens.palette
+    val listState = rememberLazyListState()
+    val topBlurProgress by remember {
+        derivedStateOf {
+            if (listState.firstVisibleItemIndex > 0) 1f
+            else (listState.firstVisibleItemScrollOffset / 96f).coerceIn(0f, 1f)
+        }
+    }
     var confirmDeleteItem by remember { mutableStateOf<DownloadItem?>(null) }
     var technicalErrorItem by remember { mutableStateOf<DownloadItem?>(null) }
 
@@ -123,6 +137,7 @@ fun DownloadsScreenContent(
         contentAlignment = Alignment.TopCenter
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 640.dp)
@@ -131,10 +146,10 @@ fun DownloadsScreenContent(
             contentPadding = PaddingValues(
                 start = 20.dp,
                 end = 20.dp,
-                top = 18.dp,
-                bottom = contentBottomPadding.calculateBottomPadding() + 24.dp
+                top = 16.dp,
+                bottom = contentBottomPadding.calculateBottomPadding() + 8.dp
             ),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
                 Column {
@@ -231,6 +246,11 @@ fun DownloadsScreenContent(
                 }
             }
         }
+
+        ShreyTopGradualBlur(
+            scrollProgress = topBlurProgress,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
     }
 
     confirmDeleteItem?.let { target ->
@@ -404,75 +424,215 @@ private fun DownloadJobCard(
 
         Spacer(Modifier.height(12.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val fontScale = LocalDensity.current.fontScale
+            val useStackedActions = maxWidth < 276.dp || fontScale > 1.15f
+
             when {
                 item.stage.isActive || item.stage == DownloadStage.QUEUED -> {
-                    ShreyGlassButton(
-                        text = if (item.stage == DownloadStage.QUEUED) "Remove" else "Cancel",
-                        leadingIcon = Icons.Outlined.Close,
-                        contentColor = palette.statusError,
-                        onClick = onCancel,
-                        height = 42.dp,
-                        modifier = Modifier.testTag("cancel_download_${item.id}")
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ShreyGlassButton(
+                            text = if (item.stage == DownloadStage.QUEUED) "Remove" else "Cancel",
+                            leadingIcon = Icons.Outlined.Close,
+                            contentColor = palette.statusError,
+                            onClick = onCancel,
+                            height = 44.dp,
+                            horizontalPadding = 14.dp,
+                            modifier = Modifier.testTag("cancel_download_${item.id}")
+                        )
+                    }
                 }
 
                 item.stage == DownloadStage.COMPLETED -> {
-                    ShreyGlassButton(
-                        text = "Open",
-                        leadingIcon = Icons.AutoMirrored.Outlined.OpenInNew,
-                        onClick = onOpen,
-                        height = 42.dp,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ShreyGlassButton(
-                        text = "Share",
-                        leadingIcon = Icons.Outlined.Share,
-                        onClick = onShare,
-                        height = 42.dp,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ShreyGlassButton(
-                        text = "Hide",
-                        onClick = onRemoveHistory,
-                        contentColor = palette.textSecondary,
-                        height = 42.dp
-                    )
-                    ShreyGlassButton(
-                        text = "",
-                        leadingIcon = Icons.Outlined.DeleteOutline,
-                        contentColor = palette.statusError,
-                        onClick = onRequestDeleteFile,
-                        height = 42.dp
-                    )
+                    if (useStackedActions) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ShreyGlassButton(
+                                    text = "Open",
+                                    leadingIcon = Icons.AutoMirrored.Outlined.OpenInNew,
+                                    onClick = onOpen,
+                                    height = 44.dp,
+                                    horizontalPadding = 12.dp,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("download_open_${item.id}")
+                                )
+                                ShreyGlassButton(
+                                    text = "Share",
+                                    leadingIcon = Icons.Outlined.Share,
+                                    onClick = onShare,
+                                    height = 44.dp,
+                                    horizontalPadding = 12.dp,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("download_share_${item.id}")
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ShreyGlassButton(
+                                    text = "Hide",
+                                    leadingIcon = Icons.Outlined.VisibilityOff,
+                                    onClick = onRemoveHistory,
+                                    contentColor = palette.textSecondary,
+                                    height = 42.dp,
+                                    horizontalPadding = 12.dp,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("download_hide_${item.id}")
+                                )
+                                ShreyGlassButton(
+                                    text = "Delete",
+                                    leadingIcon = Icons.Outlined.DeleteOutline,
+                                    contentColor = palette.statusError,
+                                    onClick = onRequestDeleteFile,
+                                    height = 42.dp,
+                                    horizontalPadding = 12.dp,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("download_delete_${item.id}")
+                                )
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ShreyGlassButton(
+                                text = "Open",
+                                leadingIcon = Icons.AutoMirrored.Outlined.OpenInNew,
+                                onClick = onOpen,
+                                height = 44.dp,
+                                horizontalPadding = 10.dp,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("download_open_${item.id}")
+                            )
+                            ShreyGlassButton(
+                                text = "Share",
+                                leadingIcon = Icons.Outlined.Share,
+                                onClick = onShare,
+                                height = 44.dp,
+                                horizontalPadding = 10.dp,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("download_share_${item.id}")
+                            )
+                            ShreyGlassIconButton(
+                                icon = Icons.Outlined.VisibilityOff,
+                                contentDescription = "Hide from history",
+                                onClick = onRemoveHistory,
+                                contentColor = palette.textSecondary,
+                                size = 44.dp,
+                                modifier = Modifier.testTag("download_hide_${item.id}")
+                            )
+                            ShreyGlassIconButton(
+                                icon = Icons.Outlined.DeleteOutline,
+                                contentDescription = "Delete file",
+                                onClick = onRequestDeleteFile,
+                                contentColor = palette.statusError,
+                                size = 44.dp,
+                                modifier = Modifier.testTag("download_delete_${item.id}")
+                            )
+                        }
+                    }
                 }
 
                 else -> {
-                    ShreyGlassButton(
-                        text = "Retry",
-                        leadingIcon = Icons.Outlined.Refresh,
-                        onClick = onRetry,
-                        height = 42.dp,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (!item.technicalError.isNullOrBlank()) {
-                        ShreyGlassButton(
-                            text = "Details",
-                            leadingIcon = Icons.Outlined.Info,
-                            contentColor = palette.textSecondary,
-                            onClick = onViewTechnicalDetails,
-                            height = 42.dp
-                        )
+                    if (useStackedActions) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ShreyGlassButton(
+                                text = "Retry",
+                                leadingIcon = Icons.Outlined.Refresh,
+                                onClick = onRetry,
+                                height = 44.dp,
+                                horizontalPadding = 12.dp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("download_retry_${item.id}")
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (!item.technicalError.isNullOrBlank()) {
+                                    ShreyGlassButton(
+                                        text = "Details",
+                                        leadingIcon = Icons.Outlined.Info,
+                                        contentColor = palette.textSecondary,
+                                        onClick = onViewTechnicalDetails,
+                                        height = 42.dp,
+                                        horizontalPadding = 12.dp,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("download_details_${item.id}")
+                                    )
+                                }
+                                ShreyGlassButton(
+                                    text = "Remove",
+                                    leadingIcon = Icons.Outlined.Close,
+                                    contentColor = palette.textSecondary,
+                                    onClick = onRemoveHistory,
+                                    height = 42.dp,
+                                    horizontalPadding = 12.dp,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("download_remove_${item.id}")
+                                )
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ShreyGlassButton(
+                                text = "Retry",
+                                leadingIcon = Icons.Outlined.Refresh,
+                                onClick = onRetry,
+                                height = 44.dp,
+                                horizontalPadding = 12.dp,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("download_retry_${item.id}")
+                            )
+                            if (!item.technicalError.isNullOrBlank()) {
+                                ShreyGlassIconButton(
+                                    icon = Icons.Outlined.Info,
+                                    contentDescription = "Technical details",
+                                    contentColor = palette.textSecondary,
+                                    onClick = onViewTechnicalDetails,
+                                    size = 44.dp,
+                                    modifier = Modifier.testTag("download_details_${item.id}")
+                                )
+                            }
+                            ShreyGlassIconButton(
+                                icon = Icons.Outlined.Close,
+                                contentDescription = "Remove from history",
+                                contentColor = palette.textSecondary,
+                                onClick = onRemoveHistory,
+                                size = 44.dp,
+                                modifier = Modifier.testTag("download_remove_${item.id}")
+                            )
+                        }
                     }
-                    ShreyGlassButton(
-                        text = "Remove",
-                        contentColor = palette.textSecondary,
-                        onClick = onRemoveHistory,
-                        height = 42.dp
-                    )
                 }
             }
         }

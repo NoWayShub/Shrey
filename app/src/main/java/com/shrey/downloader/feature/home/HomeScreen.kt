@@ -35,7 +35,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +54,7 @@ import com.shrey.downloader.core.design.ShreyGlassCard
 import com.shrey.downloader.core.design.ShreyGlassTextField
 import com.shrey.downloader.core.design.ShreyPrimaryPillButton
 import com.shrey.downloader.core.design.ShreyThemeTokens
+import com.shrey.downloader.core.design.ShreyTopGradualBlur
 import com.shrey.downloader.domain.model.EngineState
 
 @Composable
@@ -119,6 +122,9 @@ fun HomeScreenContent(
 ) {
     val palette = ShreyThemeTokens.palette
     val scrollState = rememberScrollState()
+    val topBlurProgress by remember {
+        derivedStateOf { (scrollState.value / 96f).coerceIn(0f, 1f) }
+    }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -131,8 +137,8 @@ fun HomeScreenContent(
                 .verticalScroll(scrollState)
                 .statusBarsPadding()
                 .padding(horizontal = 20.dp)
-                .padding(top = 18.dp, bottom = contentBottomPadding.calculateBottomPadding() + 24.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+                .padding(top = 16.dp, bottom = contentBottomPadding.calculateBottomPadding() + 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Top Brand Header
             Row(
@@ -268,6 +274,11 @@ fun HomeScreenContent(
                 }
             }
         }
+
+        ShreyTopGradualBlur(
+            scrollProgress = topBlurProgress,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
     }
 }
 

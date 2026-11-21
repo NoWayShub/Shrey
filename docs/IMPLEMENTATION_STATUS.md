@@ -1,35 +1,25 @@
-# Shrey v0.0.1 — Implementation Status
+# Shrey v0.0.2 — Implementation Status
 
 ## Current Milestone
-Milestone 5: Complete (v0.0.1 compiled, unit/Robolectric tested, and debug APK packaged)
+v0.0.2 Beta UI Polish Pass (built on top of verified v0.0.1 real-device 4K download engine)
 
-## Completed Milestones
+## v0.0.2 Focused UI Improvements
+- **Bottom Navigation Overlap Fix (`ShreyNavigation.kt`, `ShreyGlassComponents.kt`, primary screens):**
+  - Dynamically measures the floating glass bottom bar height via `onSizeChanged` and incorporates `WindowInsets.navigationBars` and `WindowInsets.ime` into `bottomClearance` so scrollable content on Home, Downloads, Library, and Settings always clears the floating pill bar and gesture/3-button system navigation bars.
+- **Downloads & Library Action Row Redesign (`DownloadsScreen.kt`, `LibraryScreen.kt`, `ShreyGlassComponents.kt`):**
+  - Added compact `ShreyGlassIconButton` for secondary card actions (Hide, Delete, Technical Details, Remove) and tightened `ShreyGlassButton` padding/icon spacing so primary `Open`, `Share`, and `Retry` labels never clip on narrow screens.
+  - Added `BoxWithConstraints` + `fontScale` adaptive two-row wrapping for ultra-narrow screens or large accessibility font scales.
+- **Settings Layout Density & Polish (`SettingsScreen.kt`):**
+  - Refined card padding, vertical rhythm, sub-section `HorizontalDivider` grouping, sleeker `SettingPillChip` dimensions, tighter `FlowRow` chip spacing, and ellipsis-safe `DiagnosticRow` layout while preserving all existing settings and behavior.
+- **Subtle TOP-Only Gradual Blur (`ShreyTopGradualBlur`):**
+  - Implemented native Jetpack Compose `ShreyTopGradualBlur` with smooth multi-stop cubic-eased alpha fade (eliminating banding in Dark and Light themes), scroll-reactive intensity, and gentle API 31+ `Modifier.blur` frosted mist confined strictly to the upper status-bar edge (no bottom blur). Applied across Home, Downloads, Library, Settings, About, and Licenses.
+- **Zero Engine Regressions:**
+  - `yt-dlp`, `youtubedl-android`, `FFmpeg`, `Room`, `DataStore`, `MediaStoragePublisher`, and `ShreyDownloadService` remain untouched.
 
-- **Milestone 0 — Project Foundation:**
-  - Configured `applicationId = "com.shrey.downloader"`, `versionName = "0.0.1"`, `minSdk = 29`, `targetSdk = 36`, `useLegacyPackaging = true`, and multi-ABI filters (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`).
-  - Installed bundled Google Fonts (`Plus Jakarta Sans`, `JetBrains Mono`) and generated custom monochrome geometric adaptive + raster launcher icons.
-  - Updated `AndroidManifest.xml` with least-privilege permissions (`INTERNET`, `ACCESS_NETWORK_STATE`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`), `ACTION_SEND` share intent filter, `ShreyDownloadService`, and `FileProvider`.
+## Completed Baseline (v0.0.1)
+- **Foundation & Engine:** `applicationId = "com.shrey.downloader"`, `minSdk = 29`, `targetSdk = 36`, multi-ABI (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`), `youtubedl-android:0.18.1` + `:ffmpeg:0.18.1`, `UrlValidator`, `YtDlpMediaExtractor`, `YtDlpDownloadEngine`, `MediaStoragePublisher`, Room queue & DataStore preferences, and foreground `ShreyDownloadService`.
 
-- **Milestone 1 — Real Extraction Engine:**
-  - Integrated `io.github.junkfood02.youtubedl-android:library:0.18.1` and `:ffmpeg:0.18.1` from Maven Central.
-  - Implemented `EngineCoordinator` (mutex-protected async initialization + `yt-dlp`, FFmpeg, and JS runtime diagnostics).
-  - Implemented `UrlValidator` (strict `http`/`https` validation, SSRF/loopback/private IP blocking, CLI flag injection defense), `YtDlpJsonParser`, `FormatSelectionMapper`, `ErrorTranslator`, and `YtDlpMediaExtractor`.
+## Known Limitations
+- **yt-dlp-ejs JS Runtime:** `youtubedl-android:0.18.1` does not bundle a verified Android Deno/QuickJS runtime for YouTube `n`-challenge solving; reported transparently in Settings diagnostics.
+- **Real-Device Visual Verification:** Automated JVM/Robolectric tests run headless; final visual check of blur softness, insets, and touch ergonomics on physical hardware (Samsung phone) should be verified after installing `app/build/outputs/apk/debug/app-debug.apk`.
 
-- **Milestone 2 — Real Download Engine & Storage:**
-  - Implemented `YtDlpDownloadEngine` supporting Video+Audio (direct & FFmpeg merge), Audio Only (Original, M4A, MP3, Opus), Video Only, and Thumbnail Only (OkHttp TLS-verified fetch + Bitmap JPG/PNG conversion).
-  - Implemented `ProgressParser`, real cancellation via `YoutubeDL.destroyProcessById`, isolated per-job temp directories, and `MediaStoragePublisher` (MediaStore `IS_PENDING` atomic writes + SAF `DocumentFile` support + URI accessibility checks).
-
-- **Milestone 3 — Persistent Download Management & Background Execution:**
-  - Implemented Room `ShreyDatabase`, `DownloadEntity`, `DownloadDao`, `RoomDownloadRepository`, and DataStore `SettingsDataStore`.
-  - Implemented `DownloadQueueManager` (Room-backed sequential queue, metered network policy check, process-death `INTERRUPTED` recovery), `DownloadNotificationManager`, and `ShreyDownloadService` (`foregroundServiceType="dataSync"` + Android 15+ `onTimeout` handling).
-
-- **Milestone 4 — Liquid Glass Compose Interface:**
-  - Implemented original Liquid Glass theme (`ShreyTheme`, Dark `#08090B` & Light `#F4F5F8` tokens, Full/Reduced glass modes, haptics).
-  - Implemented `HomeScreen` + `MediaPreviewCard`, `DownloadsScreen`, `LibraryScreen`, `SettingsScreen`, `AboutScreen`, `LicensesScreen`, and `ShreyAppRoot` with type-safe Navigation Compose and floating glass bottom bar.
-
-## Known Limitations / Blockers
-- **yt-dlp-ejs JS Runtime:** `youtubedl-android:0.18.1` does not bundle a verified Android Deno/QuickJS runtime for YouTube `n`-challenge solving. Shrey reports this transparently in Settings diagnostics and extraction warnings rather than shipping an unverified desktop binary.
-- **Physical Device Verification:** Execution environment has no local ADB or Android Emulator attached; physical device testing (e.g., Samsung Galaxy A27) must be executed after exporting/installing the built APK.
-
-## Verification Results
-- Pending Gradle build & unit/Robolectric test execution.

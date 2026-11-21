@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
@@ -35,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,8 +56,10 @@ import coil.compose.AsyncImage
 import com.shrey.downloader.core.design.ShreyEmptyState
 import com.shrey.downloader.core.design.ShreyGlassButton
 import com.shrey.downloader.core.design.ShreyGlassCard
+import com.shrey.downloader.core.design.ShreyGlassIconButton
 import com.shrey.downloader.core.design.ShreySegmentedControl
 import com.shrey.downloader.core.design.ShreyThemeTokens
+import com.shrey.downloader.core.design.ShreyTopGradualBlur
 import com.shrey.downloader.core.utilities.Formatters
 import com.shrey.downloader.domain.model.DownloadItem
 import com.shrey.downloader.domain.model.DownloadMode
@@ -118,6 +124,13 @@ fun LibraryScreenContent(
     modifier: Modifier = Modifier
 ) {
     val palette = ShreyThemeTokens.palette
+    val listState = rememberLazyListState()
+    val topBlurProgress by remember {
+        derivedStateOf {
+            if (listState.firstVisibleItemIndex > 0) 1f
+            else (listState.firstVisibleItemScrollOffset / 96f).coerceIn(0f, 1f)
+        }
+    }
     var confirmDelete by remember { mutableStateOf<DownloadItem?>(null) }
 
     Box(
@@ -125,6 +138,7 @@ fun LibraryScreenContent(
         contentAlignment = Alignment.TopCenter
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 640.dp)
@@ -133,10 +147,10 @@ fun LibraryScreenContent(
             contentPadding = PaddingValues(
                 start = 20.dp,
                 end = 20.dp,
-                top = 18.dp,
-                bottom = contentBottomPadding.calculateBottomPadding() + 24.dp
+                top = 16.dp,
+                bottom = contentBottomPadding.calculateBottomPadding() + 8.dp
             ),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
                 Column {
@@ -185,6 +199,11 @@ fun LibraryScreenContent(
                 }
             }
         }
+
+        ShreyTopGradualBlur(
+            scrollProgress = topBlurProgress,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
     }
 
     confirmDelete?.let { target ->
@@ -302,38 +321,83 @@ private fun LibraryItemCard(
 
         Spacer(Modifier.height(12.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val fontScale = LocalDensity.current.fontScale
+            val useStackedActions = maxWidth < 252.dp || fontScale > 1.2f
+
             if (entry.isAccessible) {
-                ShreyGlassButton(
-                    text = "Open",
-                    leadingIcon = Icons.AutoMirrored.Outlined.OpenInNew,
-                    onClick = onOpen,
-                    height = 42.dp,
-                    modifier = Modifier.weight(1f)
-                )
-                ShreyGlassButton(
-                    text = "Share",
-                    leadingIcon = Icons.Outlined.Share,
-                    onClick = onShare,
-                    height = 42.dp,
-                    modifier = Modifier.weight(1f)
-                )
-                ShreyGlassButton(
-                    text = "",
-                    leadingIcon = Icons.Outlined.DeleteOutline,
-                    contentColor = palette.statusError,
-                    onClick = onRequestDelete,
-                    height = 42.dp
-                )
+                if (useStackedActions) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ShreyGlassButton(
+                                text = "Open",
+                                leadingIcon = Icons.AutoMirrored.Outlined.OpenInNew,
+                                onClick = onOpen,
+                                height = 44.dp,
+                                horizontalPadding = 12.dp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            ShreyGlassButton(
+                                text = "Share",
+                                leadingIcon = Icons.Outlined.Share,
+                                onClick = onShare,
+                                height = 44.dp,
+                                horizontalPadding = 12.dp,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        ShreyGlassButton(
+                            text = "Delete File",
+                            leadingIcon = Icons.Outlined.DeleteOutline,
+                            contentColor = palette.statusError,
+                            onClick = onRequestDelete,
+                            height = 42.dp,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ShreyGlassButton(
+                            text = "Open",
+                            leadingIcon = Icons.AutoMirrored.Outlined.OpenInNew,
+                            onClick = onOpen,
+                            height = 44.dp,
+                            horizontalPadding = 10.dp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        ShreyGlassButton(
+                            text = "Share",
+                            leadingIcon = Icons.Outlined.Share,
+                            onClick = onShare,
+                            height = 44.dp,
+                            horizontalPadding = 10.dp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        ShreyGlassIconButton(
+                            icon = Icons.Outlined.DeleteOutline,
+                            contentDescription = "Delete file",
+                            contentColor = palette.statusError,
+                            onClick = onRequestDelete,
+                            size = 44.dp
+                        )
+                    }
+                }
             } else {
                 ShreyGlassButton(
                     text = "Remove Record",
                     onClick = onRemoveRecord,
                     contentColor = palette.textSecondary,
-                    height = 42.dp,
+                    height = 44.dp,
                     modifier = Modifier.fillMaxWidth()
                 )
             }

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.2] - 2026-11-21
+
+### Changed / Improved
+- **Bottom Navigation Clearance:** Dynamically measures the floating glass bottom bar height and calculates adaptive clearance incorporating `WindowInsets.navigationBars` and `WindowInsets.ime`. Scrollable content on Home, Downloads, Library, and Settings now fully clears the floating pill bar across gesture and 3-button navigation.
+- **Action Button Layout:** Redesigned download card actions with `ShreyGlassIconButton` for secondary actions (Hide, Delete, Technical Details) and `BoxWithConstraints` adaptive wrapping. Primary `Open`, `Share`, and `Retry` labels remain fully readable on narrow screens without truncation.
+- **Settings Layout Density:** Refined card padding, vertical rhythm, sleeker `SettingPillChip` dimensions, tighter `FlowRow` chip spacing, and ellipsis-safe `DiagnosticRow` formatting for better display ergonomics.
+- **Top Gradual Blur Overlay:** Added `ShreyTopGradualBlur` with smooth multi-stop cubic-eased alpha gradient and scroll-reactive intensity confined strictly to the upper status-bar edge across all primary screens.
+- **Automated Testing:** Added Robolectric tests covering narrow 360dp card actions and top gradual blur rendering (31 total automated tests).
+
+---
+
 ## [0.0.1-beta] - 2026-11-21
 
 ### Added

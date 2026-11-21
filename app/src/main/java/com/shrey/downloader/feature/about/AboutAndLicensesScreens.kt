@@ -28,6 +28,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shrey.downloader.core.design.ShreyGlassCard
 import com.shrey.downloader.core.design.ShreyThemeTokens
+import com.shrey.downloader.core.design.ShreyTopGradualBlur
 
 @Composable
 fun AboutScreen(
@@ -45,6 +49,9 @@ fun AboutScreen(
 ) {
     val palette = ShreyThemeTokens.palette
     val scroll = rememberScrollState()
+    val topBlurProgress by remember {
+        derivedStateOf { (scroll.value / 96f).coerceIn(0f, 1f) }
+    }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -73,7 +80,7 @@ fun AboutScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Version 0.0.1 · Native Android",
+                    text = "Version 0.0.2 · Native Android",
                     style = MaterialTheme.typography.labelSmall,
                     color = palette.textSecondary
                 )
@@ -127,6 +134,11 @@ fun AboutScreen(
                 )
             }
         }
+
+        ShreyTopGradualBlur(
+            scrollProgress = topBlurProgress,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
     }
 }
 
@@ -176,6 +188,9 @@ fun LicensesScreen(
 ) {
     val palette = ShreyThemeTokens.palette
     val scroll = rememberScrollState()
+    val topBlurProgress by remember {
+        derivedStateOf { (scroll.value / 96f).coerceIn(0f, 1f) }
+    }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -220,6 +235,11 @@ fun LicensesScreen(
                 }
             }
         }
+
+        ShreyTopGradualBlur(
+            scrollProgress = topBlurProgress,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
     }
 }
 

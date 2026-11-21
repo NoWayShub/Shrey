@@ -4,24 +4,24 @@ This document tracks known issues, technical limitations, and targeted improveme
 
 ---
 
-## 1. User Interface Issues (Targeted for v0.0.2)
+## 1. User Interface Issues (Resolved in v0.0.2)
 
 ### Issue 1: Floating Bottom Navigation Overlaps Content
 - **Description:** On the Home and Settings screens, the floating navigation bar overlays the bottom portion of scrollable content.
 - **Affected Areas:** `HomeScreen`, `SettingsScreen`, `ShreyAppRoot` Scaffold bottom bar insets.
-- **Root Cause:** Content padding does not fully account for the floating navigation bar's height plus system navigation bar window insets.
-- **Status:** Documented. Scheduled for resolution in v0.0.2.
+- **Root Cause:** Content padding did not dynamically account for the floating navigation bar's measured height plus system navigation bar window insets.
+- **Status:** Resolved in v0.0.2 via dynamic height measurement and adaptive bottom clearance in `ShreyNavigation.kt`.
 
 ### Issue 2: Truncated Action Buttons on Downloads Screen
-- **Description:** On certain screen sizes and font scalings, action buttons on download cards display truncated labels such as `O...` (Open) and `Sh...` (Share).
-- **Affected Area:** `DownloadsScreen.kt` action button row.
+- **Description:** On certain screen sizes and font scalings, action buttons on download cards displayed truncated labels such as `O...` (Open) and `Sh...` (Share).
+- **Affected Area:** `DownloadsScreen.kt` and `LibraryScreen.kt` action button rows.
 - **Root Cause:** Fixed button widths and horizontal constraints without adaptive wrapping or icon-primary fallbacks.
-- **Status:** Documented. Scheduled for resolution in v0.0.2.
+- **Status:** Resolved in v0.0.2 with `ShreyGlassIconButton` for secondary actions and `BoxWithConstraints` adaptive wrapping.
 
 ### Issue 3: Settings Screen Layout Density
-- **Description:** Several chips and option rows in Settings have excessive padding or wrap awkwardly on narrow displays.
+- **Description:** Several chips and option rows in Settings had excessive padding or wrapped awkwardly on narrow displays.
 - **Affected Area:** `SettingsScreen.kt`.
-- **Status:** Scheduled for aesthetic polish in v0.0.2.
+- **Status:** Resolved in v0.0.2 with streamlined chip dimensions, refined padding, and ellipsis-safe diagnostic rows.
 
 ---
 

@@ -41,7 +41,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +52,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -57,6 +61,7 @@ import com.shrey.downloader.core.design.ShreyGlassButton
 import com.shrey.downloader.core.design.ShreyGlassCard
 import com.shrey.downloader.core.design.ShreySegmentedControl
 import com.shrey.downloader.core.design.ShreyThemeTokens
+import com.shrey.downloader.core.design.ShreyTopGradualBlur
 import com.shrey.downloader.core.design.rememberShreyHaptics
 import com.shrey.downloader.domain.model.AudioOutputFormat
 import com.shrey.downloader.domain.model.DefaultVideoQuality
@@ -151,6 +156,10 @@ fun SettingsScreenContent(
     val palette = ShreyThemeTokens.palette
     val haptics = rememberShreyHaptics()
     val scrollState = rememberScrollState()
+    val topBlurProgress by remember {
+        derivedStateOf { (scrollState.value / 96f).coerceIn(0f, 1f) }
+    }
+    val cardPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -162,11 +171,11 @@ fun SettingsScreenContent(
                 .widthIn(max = 640.dp)
                 .verticalScroll(scrollState)
                 .statusBarsPadding()
-                .padding(horizontal = 20.dp)
-                .padding(top = 18.dp, bottom = contentBottomPadding.calculateBottomPadding() + 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 18.dp)
+                .padding(top = 16.dp, bottom = contentBottomPadding.calculateBottomPadding() + 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column {
+            Column(modifier = Modifier.padding(horizontal = 2.dp)) {
                 Text(
                     text = "Settings",
                     style = MaterialTheme.typography.headlineMedium,
@@ -181,52 +190,44 @@ fun SettingsScreenContent(
             }
 
             // Appearance
-            ShreyGlassCard {
+            ShreyGlassCard(contentPadding = cardPadding) {
                 SettingGroupTitle("Appearance")
                 Spacer(Modifier.height(10.dp))
-                Text(
-                    text = "Theme",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.textSecondary
-                )
-                Spacer(Modifier.height(8.dp))
+                SettingSubLabel("Theme")
+                Spacer(Modifier.height(6.dp))
                 ShreySegmentedControl(
                     items = ThemeMode.entries,
                     selectedItem = settings.themeMode,
                     labelFor = { it.label },
                     onSelect = onThemeSelected,
-                    testTagPrefix = "theme"
+                    testTagPrefix = "theme",
+                    itemHeight = 40.dp
                 )
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    text = "Glass Effects",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.textSecondary
-                )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = palette.divider)
+                Spacer(Modifier.height(10.dp))
+                SettingSubLabel("Glass Effects")
+                Spacer(Modifier.height(6.dp))
                 ShreySegmentedControl(
                     items = GlassEffectMode.entries,
                     selectedItem = settings.glassEffectMode,
                     labelFor = { it.label },
                     onSelect = onGlassModeSelected,
-                    testTagPrefix = "glass"
+                    testTagPrefix = "glass",
+                    itemHeight = 40.dp
                 )
             }
 
             // Download Defaults
-            ShreyGlassCard {
+            ShreyGlassCard(contentPadding = cardPadding) {
                 SettingGroupTitle("Download Defaults")
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
 
-                Text(
-                    text = "Default Mode",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.textSecondary
-                )
-                Spacer(Modifier.height(8.dp))
+                SettingSubLabel("Default Mode")
+                Spacer(Modifier.height(6.dp))
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     DownloadMode.entries.forEach { mode ->
                         SettingPillChip(
@@ -240,16 +241,15 @@ fun SettingsScreenContent(
                     }
                 }
 
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    text = "Preferred Video Quality",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.textSecondary
-                )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = palette.divider)
+                Spacer(Modifier.height(10.dp))
+
+                SettingSubLabel("Preferred Video Quality")
+                Spacer(Modifier.height(6.dp))
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     DefaultVideoQuality.entries.forEach { quality ->
                         SettingPillChip(
@@ -263,16 +263,15 @@ fun SettingsScreenContent(
                     }
                 }
 
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    text = "Default Audio Format",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.textSecondary
-                )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = palette.divider)
+                Spacer(Modifier.height(10.dp))
+
+                SettingSubLabel("Default Audio Format")
+                Spacer(Modifier.height(6.dp))
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     AudioOutputFormat.entries.forEach { fmt ->
                         SettingPillChip(
@@ -288,24 +287,29 @@ fun SettingsScreenContent(
             }
 
             // Storage Destination
-            ShreyGlassCard {
+            ShreyGlassCard(contentPadding = cardPadding) {
                 SettingGroupTitle("Storage Destination")
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Text(
                     text = if (settings.customDestinationUri != null) {
                         "Custom folder: ${settings.customDestinationLabel ?: "Selected Folder"}"
                     } else {
                         "Default Android MediaStore (Movies/Shrey, Music/Shrey, Pictures/Shrey)"
                     },
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = palette.textSecondary
                 )
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     ShreyGlassButton(
                         text = "Choose Folder",
                         leadingIcon = Icons.Outlined.FolderOpen,
                         onClick = onChooseFolder,
+                        height = 42.dp,
+                        horizontalPadding = 12.dp,
                         modifier = Modifier
                             .weight(1f)
                             .testTag("choose_folder_button")
@@ -314,16 +318,18 @@ fun SettingsScreenContent(
                         ShreyGlassButton(
                             text = "Use Default",
                             onClick = onResetFolder,
-                            contentColor = palette.textSecondary
+                            contentColor = palette.textSecondary,
+                            height = 42.dp,
+                            horizontalPadding = 12.dp
                         )
                     }
                 }
             }
 
             // Transfers, Feedback & Notifications
-            ShreyGlassCard {
+            ShreyGlassCard(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
                 SettingGroupTitle("Behavior")
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
                 SettingToggleRow(
                     title = "Download over mobile data",
                     subtitle = "Allow transfers on metered cellular networks",
@@ -350,7 +356,7 @@ fun SettingsScreenContent(
             }
 
             // Local Engine Diagnostics
-            ShreyGlassCard {
+            ShreyGlassCard(contentPadding = cardPadding) {
                 SettingGroupTitle("Local Extraction Engine")
                 Spacer(Modifier.height(10.dp))
                 when (engineState) {
@@ -367,12 +373,12 @@ fun SettingsScreenContent(
                         Spacer(Modifier.height(6.dp))
                         DiagnosticRow(
                             "FFmpeg",
-                            if (diag.ffmpegAvailable) "Available (merging & transcoding)" else "Unavailable"
+                            if (diag.ffmpegAvailable) "Available (merge & transcode)" else "Unavailable"
                         )
                         Spacer(Modifier.height(6.dp))
                         DiagnosticRow(
                             "JS Runtime (EJS)",
-                            diag.jsRuntimeName ?: "Not bundled in v0.0.1"
+                            diag.jsRuntimeName ?: "Not bundled in v0.0.2"
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
@@ -391,14 +397,15 @@ fun SettingsScreenContent(
                         ShreyGlassButton(
                             text = "Retry Initialization",
                             leadingIcon = Icons.Outlined.Refresh,
-                            onClick = onRetryEngine
+                            onClick = onRetryEngine,
+                            height = 42.dp
                         )
                     }
                 }
             }
 
             // About & Legal
-            ShreyGlassCard(contentPadding = PaddingValues(vertical = 6.dp, horizontal = 18.dp)) {
+            ShreyGlassCard(contentPadding = PaddingValues(vertical = 4.dp, horizontal = 16.dp)) {
                 NavigationRow(
                     icon = Icons.Outlined.Description,
                     title = "Open-Source Licenses",
@@ -410,12 +417,17 @@ fun SettingsScreenContent(
                 NavigationRow(
                     icon = Icons.Outlined.Info,
                     title = "About Shrey",
-                    subtitle = "Version 0.0.1 · Local privacy statement",
+                    subtitle = "Version 0.0.2 · Local privacy statement",
                     onClick = onOpenAbout,
                     testTag = "settings_about_row"
                 )
             }
         }
+
+        ShreyTopGradualBlur(
+            scrollProgress = topBlurProgress,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
     }
 }
 
@@ -429,6 +441,15 @@ private fun SettingGroupTitle(text: String) {
 }
 
 @Composable
+private fun SettingSubLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = ShreyThemeTokens.palette.textSecondary
+    )
+}
+
+@Composable
 private fun SettingPillChip(
     label: String,
     selected: Boolean,
@@ -437,16 +458,16 @@ private fun SettingPillChip(
     val palette = ShreyThemeTokens.palette
     Box(
         modifier = Modifier
-            .defaultMinSize(minHeight = 38.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .defaultMinSize(minHeight = 34.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(if (selected) palette.accentSolid else palette.pillSelectedFill)
             .border(
                 0.75.dp,
                 if (selected) Color.Transparent else palette.glassBorderTop,
-                RoundedCornerShape(12.dp)
+                RoundedCornerShape(10.dp)
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 13.dp, vertical = 8.dp),
+            .padding(horizontal = 11.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -454,7 +475,9 @@ private fun SettingPillChip(
             style = MaterialTheme.typography.labelMedium.copy(
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
             ),
-            color = if (selected) palette.accentOnSolid else palette.textSecondary
+            color = if (selected) palette.accentOnSolid else palette.textSecondary,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }
@@ -471,8 +494,8 @@ private fun SettingToggleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .defaultMinSize(minHeight = 56.dp)
-            .padding(vertical = 8.dp),
+            .defaultMinSize(minHeight = 50.dp)
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -482,6 +505,7 @@ private fun SettingToggleRow(
                 style = MaterialTheme.typography.titleSmall,
                 color = palette.textPrimary
             )
+            Spacer(Modifier.height(1.dp))
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
@@ -508,17 +532,25 @@ private fun DiagnosticRow(label: String, value: String) {
     val palette = ShreyThemeTokens.palette
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = palette.textSecondary
+            color = palette.textSecondary,
+            modifier = Modifier.weight(0.42f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         Text(
             text = value,
             style = MaterialTheme.typography.labelSmall,
-            color = palette.textPrimary
+            color = palette.textPrimary,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(0.58f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -535,29 +567,32 @@ private fun NavigationRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .defaultMinSize(minHeight = 58.dp)
+            .defaultMinSize(minHeight = 52.dp)
             .clickable(onClick = onClick)
             .testTag(testTag)
-            .padding(vertical = 10.dp),
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = palette.textPrimary,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(19.dp)
         )
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
                 color = palette.textPrimary
             )
+            Spacer(Modifier.height(1.dp))
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = palette.textTertiary
+                color = palette.textTertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
         Icon(

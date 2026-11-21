@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
@@ -21,9 +22,12 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -84,8 +88,11 @@ fun ShreyAppRoot(
         currentDestination.hasRoute<SettingsRoute>()
 
     val density = LocalDensity.current
-    val isKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
+    val navBarBottomPx = WindowInsets.navigationBars.getBottom(density)
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    val isKeyboardVisible = imeBottomPx > 0
     val showBottomBar = isTopLevelRoute && !isKeyboardVisible
+    var measuredBottomBarHeightPx by remember { mutableIntStateOf(0) }
 
     val destinations = remember(downloadsState.inProgressCount) {
         listOf(
@@ -133,7 +140,18 @@ fun ShreyAppRoot(
         }
     }
 
-    val bottomClearance = PaddingValues(bottom = if (showBottomBar) 96.dp else 20.dp)
+    val navBarBottomDp = with(density) { navBarBottomPx.toDp() }
+    val imeBottomDp = with(density) { imeBottomPx.toDp() }
+    val measuredBottomBarDp = with(density) { measuredBottomBarHeightPx.toDp() }
+    // Ensure scrollable content always clears the full floating glass bar + gesture/3-button nav insets + breathing room.
+    val effectiveBottomBarDp = maxOf(measuredBottomBarDp, navBarBottomDp + 86.dp)
+    val bottomClearance = PaddingValues(
+        bottom = if (showBottomBar) {
+            effectiveBottomBarDp + 18.dp
+        } else {
+            maxOf(navBarBottomDp, imeBottomDp) + 20.dp
+        }
+    )
 
     ShreyAmbientBackground(modifier = modifier) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -188,7 +206,13 @@ fun ShreyAppRoot(
                 visible = showBottomBar,
                 enter = fadeIn() + slideInVertically { it / 2 },
                 exit = fadeOut() + slideOutVertically { it / 2 },
-                modifier = Modifier.align(Alignment.BottomCenter)
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .onSizeChanged { size ->
+                        if (size.height > 0) {
+                            measuredBottomBarHeightPx = size.height
+                        }
+                    }
             ) {
                 ShreyGlassBottomBar(
                     destinations = destinations,

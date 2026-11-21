@@ -1,10 +1,12 @@
 package com.shrey.downloader.core.design
 
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,7 +32,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -56,6 +61,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
@@ -66,6 +73,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -120,6 +128,85 @@ fun ShreyAmbientBackground(
             }
     ) {
         content()
+    }
+}
+
+/**
+ * Shallow, iOS-inspired TOP-only gradual blur and atmospheric fade overlay.
+ * Softly cushions scrolling content as it passes beneath the status bar without
+ * hard edges, banding, or heavy per-frame full-screen blur overhead.
+ * Intentionally applied only to the top edge (never the bottom).
+ */
+@Composable
+fun ShreyTopGradualBlur(
+    scrollProgress: Float = 1f,
+    modifier: Modifier = Modifier,
+    fadeHeightBelowStatusBar: Dp = 32.dp
+) {
+    val palette = ShreyThemeTokens.palette
+    val glassMode = LocalGlassEffectMode.current
+    val density = LocalDensity.current
+    val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
+    val totalHeight = statusBarHeight + fadeHeightBelowStatusBar
+
+    // Subtle ambient presence at rest; gently deepens as content scrolls beneath the status bar.
+    val intensity by animateFloatAsState(
+        targetValue = 0.44f + (0.56f * scrollProgress.coerceIn(0f, 1f)),
+        animationSpec = tween(durationMillis = 180),
+        label = "top_gradual_blur_intensity"
+    )
+
+    val baseColor = palette.backgroundPrimary
+    val frostedVeil = if (palette.isDark) {
+        Color(0xFF10131A)
+    } else {
+        Color(0xFFFFFFFF)
+    }
+
+    // Smooth cubic-eased multi-stop alpha gradient eliminates visible banding across dark & light themes.
+    val topVeilBrush = remember(baseColor, intensity) {
+        Brush.verticalGradient(
+            0.00f to baseColor.copy(alpha = 0.90f * intensity),
+            0.22f to baseColor.copy(alpha = 0.80f * intensity),
+            0.40f to baseColor.copy(alpha = 0.62f * intensity),
+            0.56f to baseColor.copy(alpha = 0.40f * intensity),
+            0.70f to baseColor.copy(alpha = 0.22f * intensity),
+            0.82f to baseColor.copy(alpha = 0.10f * intensity),
+            0.92f to baseColor.copy(alpha = 0.03f * intensity),
+            1.00f to Color.Transparent
+        )
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(totalHeight)
+            .testTag("top_gradual_blur")
+    ) {
+        // Soft diffused frosted mist band confined to the upper status-bar edge on API 31+ in Full Glass mode.
+        if (glassMode == GlassEffectMode.FULL && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val mistAlpha = (if (palette.isDark) 0.22f else 0.36f) * intensity
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(statusBarHeight + (fadeHeightBelowStatusBar * 0.55f))
+                    .blur(radius = 12.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                    .background(
+                        Brush.verticalGradient(
+                            0.0f to frostedVeil.copy(alpha = mistAlpha),
+                            0.6f to frostedVeil.copy(alpha = mistAlpha * 0.45f),
+                            1.0f to Color.Transparent
+                        )
+                    )
+            )
+        }
+
+        // Primary smooth multi-stop atmospheric dissolve
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(topVeilBrush)
+        )
     }
 }
 
@@ -282,7 +369,9 @@ fun ShreyGlassButton(
     enabled: Boolean = true,
     leadingIcon: ImageVector? = null,
     contentColor: Color = ShreyThemeTokens.palette.textPrimary,
-    height: Dp = 48.dp
+    height: Dp = 46.dp,
+    horizontalPadding: Dp = 14.dp,
+    iconSpacing: Dp = 6.dp
 ) {
     val palette = ShreyThemeTokens.palette
     val haptics = rememberShreyHaptics()
@@ -294,7 +383,8 @@ fun ShreyGlassButton(
         label = "glass_btn_scale"
     )
 
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(15.dp)
+    val effectiveHorizontalPad = if (text.isBlank()) 10.dp else horizontalPadding
     Box(
         modifier = modifier
             .graphicsLayer {
@@ -320,7 +410,7 @@ fun ShreyGlassButton(
                 haptics.tap()
                 onClick()
             }
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = effectiveHorizontalPad, vertical = 9.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -332,18 +422,85 @@ fun ShreyGlassButton(
                     imageVector = leadingIcon,
                     contentDescription = null,
                     tint = if (enabled) contentColor else palette.textTertiary,
-                    modifier = Modifier.size(17.dp)
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(Modifier.width(7.dp))
+                if (text.isNotEmpty()) {
+                    Spacer(Modifier.width(iconSpacing))
+                }
             }
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelLarge,
-                color = if (enabled) contentColor else palette.textTertiary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            if (text.isNotEmpty()) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (enabled) contentColor else palette.textTertiary,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
+    }
+}
+
+/**
+ * Compact square Liquid Glass icon button designed for secondary card actions (e.g., Hide, Delete, Info)
+ * so primary labeled buttons retain generous horizontal breathing room on compact Android screens.
+ */
+@Composable
+fun ShreyGlassIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    contentColor: Color = ShreyThemeTokens.palette.textSecondary,
+    size: Dp = 44.dp
+) {
+    val palette = ShreyThemeTokens.palette
+    val haptics = rememberShreyHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.94f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "glass_icon_btn_scale"
+    )
+
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .size(size)
+            .clip(shape)
+            .background(palette.glassFillElevated)
+            .border(
+                BorderStroke(
+                    width = 0.85.dp,
+                    brush = Brush.verticalGradient(listOf(palette.glassBorderTop, palette.glassBorderBottom))
+                ),
+                shape = shape
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(color = contentColor),
+                enabled = enabled,
+                role = Role.Button
+            ) {
+                haptics.tap()
+                onClick()
+            }
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (enabled) contentColor else palette.textTertiary,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
@@ -466,19 +623,20 @@ fun <T> ShreySegmentedControl(
     labelFor: (T) -> String,
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
-    testTagPrefix: String = "segment"
+    testTagPrefix: String = "segment",
+    itemHeight: Dp = 42.dp
 ) {
     val palette = ShreyThemeTokens.palette
     val haptics = rememberShreyHaptics()
 
     ShreyGlassSurface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        contentPadding = PaddingValues(4.dp)
+        shape = RoundedCornerShape(16.dp),
+        contentPadding = PaddingValues(3.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             items.forEach { item ->
                 val isSelected = item == selectedItem
@@ -498,10 +656,10 @@ fun <T> ShreySegmentedControl(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .defaultMinSize(minHeight = 44.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .defaultMinSize(minHeight = itemHeight)
+                        .clip(RoundedCornerShape(13.dp))
                         .background(bg)
-                        .border(0.75.dp, border, RoundedCornerShape(14.dp))
+                        .border(0.75.dp, border, RoundedCornerShape(13.dp))
                         .clickable(
                             role = Role.Tab,
                             onClick = {
@@ -513,7 +671,7 @@ fun <T> ShreySegmentedControl(
                         )
                         .semantics { selected = isSelected }
                         .testTag("${testTagPrefix}_${labelFor(item).lowercase().replace(" ", "_")}")
-                        .padding(horizontal = 6.dp, vertical = 10.dp),
+                        .padding(horizontal = 6.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -584,11 +742,13 @@ fun ShreyGlassBottomBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 12.dp),
+            .padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         ShreyGlassSurface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 520.dp),
             shape = RoundedCornerShape(28.dp),
             elevated = true,
             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
