@@ -131,6 +131,8 @@ class YtDlpDownloadEngine(
             addOption("--no-exec")
             addOption("--no-mtime")
             addOption("--socket-timeout", "30")
+            addOption("--retries", "3")
+            addOption("--fragment-retries", "3")
             addOption("-o", outputTemplate)
 
             when (request.mode) {
@@ -165,19 +167,47 @@ class YtDlpDownloadEngine(
             )
         )
 
-        runInterruptible {
-            YoutubeDL.getInstance().execute(ytRequest, request.downloadId) { progress, etaInSeconds, line ->
-                if (cancelledIds.contains(request.downloadId)) return@execute
-                val parsed = ProgressParser.parseCallback(
-                    downloadId = request.downloadId,
-                    progressFloat = progress,
-                    etaSeconds = etaInSeconds,
-                    line = line,
-                    previousStage = currentStage
-                )
-                currentStage = parsed.stage
-                onProgress(parsed)
+        val recentDiagnosticLines = ArrayDeque<String>(24)
+        try {
+            runInterruptible {
+                YoutubeDL.getInstance().execute(ytRequest, request.downloadId) { progress, etaInSeconds, line ->
+                    if (cancelledIds.contains(request.downloadId)) return@execute
+                    if (!line.isNullOrBlank()) {
+                        synchronized(recentDiagnosticLines) {
+                            if (recentDiagnosticLines.size >= 24) {
+                                recentDiagnosticLines.removeFirst()
+                            }
+                            recentDiagnosticLines.addLast(line.trim())
+                        }
+                    }
+                    val parsed = ProgressParser.parseCallback(
+                        downloadId = request.downloadId,
+                        progressFloat = progress,
+                        etaSeconds = etaInSeconds,
+                        line = line,
+                        previousStage = currentStage
+                    )
+                    currentStage = parsed.stage
+                    onProgress(parsed)
+                }
             }
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            if (cancelledIds.contains(request.downloadId)) {
+                return DownloadResult.Cancelled
+            }
+            val combinedDiagnostics = buildString {
+                t.message?.takeIf { it.isNotBlank() }?.let { append(it) }
+                val tail = synchronized(recentDiagnosticLines) { recentDiagnosticLines.joinToString("\n") }
+                if (tail.isNotBlank() && !this.contains(tail)) {
+                    if (isNotEmpty()) append("\n")
+                    append(tail)
+                }
+            }
+            return DownloadResult.Failure(
+                ErrorTranslator.translateMessage(combinedDiagnostics, t)
+            )
         }
 
         if (cancelledIds.contains(request.downloadId)) {
@@ -207,13 +237,17 @@ class YtDlpDownloadEngine(
         )
 
         val actualExtension = producedFile.extension.ifBlank { request.outputExtension }
-        val published = storagePublisher.publishFile(
-            sourceFile = producedFile,
-            desiredTitle = request.mediaTitle,
-            extension = actualExtension,
-            mode = request.mode,
-            customTreeUriString = request.destinationTreeUri
-        )
+        val published = try {
+            storagePublisher.publishFile(
+                sourceFile = producedFile,
+                desiredTitle = request.mediaTitle,
+                extension = actualExtension,
+                mode = request.mode,
+                customTreeUriString = request.destinationTreeUri
+            )
+        } catch (t: Throwable) {
+            return DownloadResult.Failure(translateStorageFailure(t))
+        }
 
         return DownloadResult.Success(
             destinationUri = published.uriString,
@@ -256,7 +290,8 @@ class YtDlpDownloadEngine(
 
         call.execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Thumbnail HTTP error ${response.code}")
+                val reason = response.message.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
+                throw IOException("Thumbnail HTTP Error ${response.code}$reason")
             }
             // Validate final redirected URL as well to block SSRF redirects
             val finalUrl = response.request.url.toString()
@@ -378,13 +413,17 @@ class YtDlpDownloadEngine(
             )
         )
 
-        val published = storagePublisher.publishFile(
-            sourceFile = finalFile,
-            desiredTitle = request.mediaTitle,
-            extension = finalExt,
-            mode = DownloadMode.THUMBNAIL_ONLY,
-            customTreeUriString = request.destinationTreeUri
-        )
+        val published = try {
+            storagePublisher.publishFile(
+                sourceFile = finalFile,
+                desiredTitle = request.mediaTitle,
+                extension = finalExt,
+                mode = DownloadMode.THUMBNAIL_ONLY,
+                customTreeUriString = request.destinationTreeUri
+            )
+        } catch (t: Throwable) {
+            return DownloadResult.Failure(translateStorageFailure(t))
+        }
 
         return DownloadResult.Success(
             destinationUri = published.uriString,
@@ -392,6 +431,17 @@ class YtDlpDownloadEngine(
             mimeType = published.mimeType,
             fileSizeBytes = published.sizeBytes
         )
+    }
+
+    private fun translateStorageFailure(t: Throwable): ShreyError {
+        if (t is ShreyError) return t
+        val msg = t.message.orEmpty()
+        val lower = msg.lowercase()
+        return if (lower.contains("enospc") || lower.contains("no space left")) {
+            ShreyError.InsufficientStorage(msg)
+        } else {
+            ShreyError.StorageWriteFailed(msg.ifBlank { t::class.java.simpleName })
+        }
     }
 
     private fun findProducedMediaFile(workDir: File): File? {

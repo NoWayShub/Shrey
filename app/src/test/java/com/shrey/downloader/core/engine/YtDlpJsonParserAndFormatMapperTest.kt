@@ -131,4 +131,24 @@ class YtDlpJsonParserAndFormatMapperTest {
         assertEquals("Untitled Media", info.title)
         assertNotNull(info.platform)
     }
+
+    @Test
+    fun `excludes explicitly DRM-protected formats from parsed streams`() {
+        val drmJson = """
+            {
+              "id": "drm1",
+              "title": "Protected Stream Sample",
+              "formats": [
+                {"format_id": "137", "ext": "mp4", "width": 1920, "height": 1080, "vcodec": "avc1", "acodec": "none", "has_drm": true},
+                {"format_id": "18", "ext": "mp4", "width": 640, "height": 360, "vcodec": "avc1", "acodec": "mp4a", "has_drm": false}
+              ]
+            }
+        """.trimIndent()
+        val info = YtDlpJsonParser.parseMediaInfo(drmJson, "https://example.org/watch?v=drm1")
+        assertEquals(1, info.formats.size)
+        assertEquals("18", info.formats.first().formatId)
+        val options = FormatSelectionMapper.buildOptions(info, DownloadMode.VIDEO_AUDIO)
+        assertFalse(options.any { it.formatSelector.contains("137") })
+    }
 }
+

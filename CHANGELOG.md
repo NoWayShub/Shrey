@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.3-beta] - 2026-11-25
+
+### Added
+- **Intelligent Update Subsystem (`core/update/`):**
+  - Added `UpdateManager` with single-flight update checking across Shrey GitHub releases (Stable and Beta channels), `yt-dlp`, and FFmpeg runtime compatibility.
+  - Added `DailyUpdateCheckWorker` powered by WorkManager (`2.10.0`) for background scheduled update checks with deduplicated update notifications.
+  - Added `UpdateManifestVerifier` (ECDSA-SHA256 P-256 signature verification) and `ApkUpdateVerifier` (SHA-256 and APK signature checks) for secure release validation.
+  - Added `SafeEngineUpdater` with staged zipimport archive replacement, health smoke checks, and automatic rollback to last-known-good `yt-dlp`.
+  - Added `YtDlpArchiveInspector` to inspect bundled/downloaded `yt-dlp` and `yt-dlp-ejs` zipimport versions without spawning Python.
+  - Updated bundled `res/raw/ytdlp` runtime baseline.
+- **Settings Updates Card (`SettingsUpdatesCard.kt`):** Added dedicated UI card in Settings for update channel switching (Stable/Beta), auto-check controls, manual checks, runtime compatibility diagnostics, and changelog previews.
+- **Standalone Top Gradual Blur Component (`ShreyTopGradualBlur.kt`):** Extracted and refined `ShreyTopGradualBlur` Liquid Glass overlay.
+- **Expanded Automated Testing:** Added 24 new tests covering archive inspection, manifest signature verification, WorkManager scheduling, safe engine updates/rollback, and Settings UI update cards (55 total automated unit & Robolectric tests).
+
+---
+
 ## [0.0.2] - 2026-11-21
 
 ### Changed / Improved

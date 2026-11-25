@@ -31,6 +31,24 @@ class EngineCoordinator(private val appContext: Context) {
 
         return@withLock withContext(Dispatchers.IO) {
             try {
+                // Recover cleanly if a previous transactional engine activation was interrupted.
+                val activeBinary = getExtractedYtDlpFile(appContext)
+                com.shrey.downloader.core.update.SafeEngineUpdater(
+                    activeEngineFile = activeBinary,
+                    stagingDir = File(appContext.noBackupFilesDir, "shrey-engine-staging"),
+                    backupDir = File(appContext.noBackupFilesDir, "shrey-engine-backup"),
+                    isDownloadActive = { false },
+                    downloadPayload = { _, _ -> },
+                    initializationProbe = { true }
+                ).recoverInterruptedUpdateIfNeeded()
+
+                // youtubedl-android's init_ytdlp() only extracts R.raw.ytdlp when the destination file
+                // does not already exist. Remove stale extracted binaries (e.g. 2025.11.12 from earlier
+                // installs) before init() so the SHA-256-verified bundled 2026.10.26 archive is unpacked.
+                // Note: Automatic runtime YoutubeDL.updateYoutubeDL() is intentionally NOT enabled here
+                // because upstream YoutubeDLUpdater downloads payloads without SHA-256 checksum checks.
+                refreshBundledYtDlpIfStale(appContext)
+
                 YoutubeDL.getInstance().init(appContext)
                 var ffmpegReady = false
                 try {
@@ -40,20 +58,31 @@ class EngineCoordinator(private val appContext: Context) {
                     ffmpegReady = false
                 }
 
-                val version = runCatching {
-                    YoutubeDL.getInstance().version(appContext)
-                }.getOrNull()
+                val extractedBinary = getExtractedYtDlpFile(appContext)
+                val archiveInfo = YtDlpArchiveInspector.inspect(extractedBinary)
+                val resolvedVersion = archiveInfo.ytDlpVersion
+                    ?: runCatching { YoutubeDL.getInstance().version(appContext) }.getOrNull()
+                    ?: BUNDLED_YT_DLP_VERSION
 
+                val pythonVersion = detectEmbeddedPythonVersion(appContext)
                 val jsRuntime = detectJsRuntime(appContext)
+                val displayVersion = buildString {
+                    append(resolvedVersion)
+                    archiveInfo.ejsVersion?.let { append(" · EJS $it") }
+                }
+
                 val diagnostics = EngineDiagnostics(
-                    ytDlpVersion = version ?: "Bundled (youtubedl-android 0.18.1)",
+                    ytDlpVersion = displayVersion,
                     ffmpegAvailable = ffmpegReady,
                     jsRuntimeName = jsRuntime,
-                    jsRuntimeNote = if (jsRuntime != null) {
-                        "Detected local JS runtime ($jsRuntime) for yt-dlp-ejs challenges."
-                    } else {
-                        "No external JS runtime (Deno/QuickJS) bundled in v0.0.1. Standard extractors work locally; some YouTube high-resolution signatures requiring yt-dlp-ejs may be restricted."
-                    }
+                    jsRuntimeNote = buildRuntimeNote(
+                        jsRuntime = jsRuntime,
+                        pythonVersion = pythonVersion,
+                        ejsVersion = archiveInfo.ejsVersion
+                    ),
+                    pythonVersion = pythonVersion,
+                    ejsVersion = archiveInfo.ejsVersion,
+                    ffmpegVersion = BUNDLED_FFMPEG_VERSION
                 )
                 _state.value = EngineState.Ready(diagnostics)
                 Result.success(diagnostics)
@@ -76,12 +105,37 @@ class EngineCoordinator(private val appContext: Context) {
         return ensureInitialized()
     }
 
+    private fun refreshBundledYtDlpIfStale(context: Context) {
+        val extractedFile = getExtractedYtDlpFile(context)
+        if (!extractedFile.exists()) return
+        val existingInfo = YtDlpArchiveInspector.inspect(extractedFile)
+        if (YtDlpArchiveInspector.isVersionOlderThan(existingInfo.ytDlpVersion, BUNDLED_YT_DLP_VERSION)) {
+            extractedFile.delete()
+        }
+    }
+
+    private fun getExtractedYtDlpFile(context: Context): File {
+        return File(context.noBackupFilesDir, "youtubedl-android/yt-dlp/yt-dlp")
+    }
+
+    private fun detectEmbeddedPythonVersion(context: Context): String? {
+        val libDir = File(context.noBackupFilesDir, "youtubedl-android/packages/python/usr/lib")
+        val pyDir = libDir.listFiles()
+            ?.firstOrNull { it.isDirectory && it.name.startsWith("python3.") }
+            ?.name
+        return when {
+            pyDir != null -> "Python ${pyDir.removePrefix("python")}"
+            File(context.applicationInfo?.nativeLibraryDir.orEmpty(), "libpython.so").exists() -> "Python 3.12"
+            else -> null
+        }
+    }
+
     private fun detectJsRuntime(context: Context): String? {
         val nativeLibDir = context.applicationInfo?.nativeLibraryDir?.let { File(it) }
         val candidates = listOf(
-            "libdeno.so" to "Deno",
-            "libqjs.so" to "QuickJS",
+            "libqjs.so" to "QuickJS (libqjs.so)",
             "libquickjs.so" to "QuickJS",
+            "libdeno.so" to "Deno",
             "libnode.so" to "Node.js"
         )
         if (nativeLibDir != null && nativeLibDir.exists()) {
@@ -92,5 +146,24 @@ class EngineCoordinator(private val appContext: Context) {
             }
         }
         return null
+    }
+
+    private fun buildRuntimeNote(
+        jsRuntime: String?,
+        pythonVersion: String?,
+        ejsVersion: String?
+    ): String {
+        val pyPart = pythonVersion ?: "Embedded Python"
+        return if (jsRuntime != null) {
+            val ejsPart = ejsVersion?.let { " with yt-dlp-ejs $it" }.orEmpty()
+            "Running locally on $pyPart with $jsRuntime$ejsPart wired automatically by youtubedl-android."
+        } else {
+            "Running locally on $pyPart. No external JS runtime detected in nativeLibraryDir; some sites requiring JS challenge solving may restrict formats."
+        }
+    }
+
+    companion object {
+        const val BUNDLED_YT_DLP_VERSION = "2026.10.26"
+        const val BUNDLED_FFMPEG_VERSION = "7.1.1"
     }
 }

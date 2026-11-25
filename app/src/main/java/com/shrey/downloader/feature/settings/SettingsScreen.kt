@@ -3,6 +3,7 @@ package com.shrey.downloader.feature.settings
 import android.Manifest
 import android.content.Intent
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -16,13 +17,14 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -50,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -57,12 +60,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.BuildConfig
 import com.shrey.downloader.core.design.ShreyGlassButton
 import com.shrey.downloader.core.design.ShreyGlassCard
 import com.shrey.downloader.core.design.ShreySegmentedControl
 import com.shrey.downloader.core.design.ShreyThemeTokens
-import com.shrey.downloader.core.design.ShreyTopGradualBlur
+import com.shrey.downloader.core.design.ShreyTopGradualBlurContainer
 import com.shrey.downloader.core.design.rememberShreyHaptics
+import com.shrey.downloader.core.update.UpdateChannel
+import com.shrey.downloader.core.update.UpdateSnapshot
 import com.shrey.downloader.domain.model.AudioOutputFormat
 import com.shrey.downloader.domain.model.DefaultVideoQuality
 import com.shrey.downloader.domain.model.DownloadMode
@@ -70,6 +76,7 @@ import com.shrey.downloader.domain.model.EngineState
 import com.shrey.downloader.domain.model.GlassEffectMode
 import com.shrey.downloader.domain.model.ShreySettings
 import com.shrey.downloader.domain.model.ThemeMode
+import com.shrey.downloader.navigation.LocalShreyBottomBarPadding
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -77,12 +84,14 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onOpenAbout: () -> Unit,
     onOpenLicenses: () -> Unit,
-    contentBottomPadding: PaddingValues,
+    contentBottomPadding: PaddingValues? = null,
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val engineState by viewModel.engineState.collectAsStateWithLifecycle()
+    val updateSnapshot by viewModel.updateSnapshot.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val effectiveBottomPadding = contentBottomPadding ?: LocalShreyBottomBarPadding.current
 
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -108,6 +117,7 @@ fun SettingsScreen(
     SettingsScreenContent(
         settings = settings,
         engineState = engineState,
+        updateSnapshot = updateSnapshot,
         onThemeSelected = viewModel::setThemeMode,
         onGlassModeSelected = viewModel::setGlassEffectMode,
         onDefaultModeSelected = viewModel::setDefaultDownloadMode,
@@ -125,9 +135,33 @@ fun SettingsScreen(
             }
         },
         onRetryEngine = viewModel::retryEngineInit,
+        onCheckUpdatesNow = viewModel::checkForUpdatesNow,
+        onDownloadAppApk = viewModel::downloadAndVerifyAppUpdate,
+        onOpenReleasePage = { url ->
+            runCatching {
+                context.startActivity(viewModel.apkUpdateVerifier.buildReleasePageIntent(url))
+            }.onFailure {
+                Toast.makeText(context, "Unable to open release page", Toast.LENGTH_SHORT).show()
+            }
+        },
+        onOpenVerifiedApk = { uriString ->
+            runCatching {
+                context.startActivity(viewModel.apkUpdateVerifier.buildOpenVerifiedApkIntent(uriString))
+            }.onFailure {
+                Toast.makeText(
+                    context,
+                    "Verified APK saved in Downloads/Shrey. Open it from Files to install.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        },
+        onAutoCheckUpdatesChanged = viewModel::setAutoCheckUpdates,
+        onAutoInstallEngineChanged = viewModel::setAutoInstallEngineUpdates,
+        onNotifyOnUpdatesChanged = viewModel::setNotifyOnUpdates,
+        onUpdateChannelSelected = viewModel::setUpdateChannel,
         onOpenLicenses = onOpenLicenses,
         onOpenAbout = onOpenAbout,
-        contentBottomPadding = contentBottomPadding,
+        contentBottomPadding = effectiveBottomPadding,
         modifier = modifier
     )
 }
@@ -151,28 +185,42 @@ fun SettingsScreenContent(
     onOpenLicenses: () -> Unit,
     onOpenAbout: () -> Unit,
     contentBottomPadding: PaddingValues,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    updateSnapshot: UpdateSnapshot? = null,
+    onCheckUpdatesNow: () -> Unit = {},
+    onDownloadAppApk: () -> Unit = {},
+    onOpenReleasePage: (String) -> Unit = {},
+    onOpenVerifiedApk: (String) -> Unit = {},
+    onAutoCheckUpdatesChanged: (Boolean) -> Unit = {},
+    onAutoInstallEngineChanged: (Boolean) -> Unit = {},
+    onNotifyOnUpdatesChanged: (Boolean) -> Unit = {},
+    onUpdateChannelSelected: (UpdateChannel) -> Unit = {}
 ) {
     val palette = ShreyThemeTokens.palette
     val haptics = rememberShreyHaptics()
+    val density = LocalDensity.current
+    val statusBarTop = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
     val scrollState = rememberScrollState()
     val topBlurProgress by remember {
-        derivedStateOf { (scrollState.value / 96f).coerceIn(0f, 1f) }
+        derivedStateOf { (scrollState.value / 72f).coerceIn(0f, 1f) }
     }
     val cardPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
 
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.TopCenter
+    ShreyTopGradualBlurContainer(
+        scrollProgress = topBlurProgress,
+        modifier = modifier
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .widthIn(max = 640.dp)
                 .verticalScroll(scrollState)
-                .statusBarsPadding()
                 .padding(horizontal = 18.dp)
-                .padding(top = 16.dp, bottom = contentBottomPadding.calculateBottomPadding() + 8.dp),
+                .padding(
+                    top = statusBarTop + 16.dp,
+                    bottom = contentBottomPadding.calculateBottomPadding() + 12.dp
+                )
+                .testTag("settings_scroll_container"),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Column(modifier = Modifier.padding(horizontal = 2.dp)) {
@@ -373,12 +421,12 @@ fun SettingsScreenContent(
                         Spacer(Modifier.height(6.dp))
                         DiagnosticRow(
                             "FFmpeg",
-                            if (diag.ffmpegAvailable) "Available (merge & transcode)" else "Unavailable"
+                            if (diag.ffmpegAvailable) "${diag.ffmpegVersion} (merge & transcode)" else "Unavailable"
                         )
                         Spacer(Modifier.height(6.dp))
                         DiagnosticRow(
                             "JS Runtime (EJS)",
-                            diag.jsRuntimeName ?: "Not bundled in v0.0.2"
+                            diag.jsRuntimeName ?: "Not detected"
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
@@ -404,6 +452,21 @@ fun SettingsScreenContent(
                 }
             }
 
+            // Intelligent Updates
+            if (updateSnapshot != null) {
+                SettingsUpdatesCard(
+                    snapshot = updateSnapshot,
+                    onCheckNow = onCheckUpdatesNow,
+                    onDownloadAppApk = onDownloadAppApk,
+                    onOpenReleasePage = onOpenReleasePage,
+                    onOpenVerifiedApk = onOpenVerifiedApk,
+                    onAutoCheckChanged = onAutoCheckUpdatesChanged,
+                    onAutoInstallEngineChanged = onAutoInstallEngineChanged,
+                    onNotifyOnUpdatesChanged = onNotifyOnUpdatesChanged,
+                    onChannelSelected = onUpdateChannelSelected
+                )
+            }
+
             // About & Legal
             ShreyGlassCard(contentPadding = PaddingValues(vertical = 4.dp, horizontal = 16.dp)) {
                 NavigationRow(
@@ -417,17 +480,12 @@ fun SettingsScreenContent(
                 NavigationRow(
                     icon = Icons.Outlined.Info,
                     title = "About Shrey",
-                    subtitle = "Version 0.0.2 · Local privacy statement",
+                    subtitle = "Version ${BuildConfig.VERSION_NAME} · Local privacy statement",
                     onClick = onOpenAbout,
                     testTag = "settings_about_row"
                 )
             }
         }
-
-        ShreyTopGradualBlur(
-            scrollProgress = topBlurProgress,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
     }
 }
 

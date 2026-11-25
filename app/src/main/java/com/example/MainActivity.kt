@@ -30,7 +30,8 @@ class MainActivity : ComponentActivity() {
             mediaExtractor = appContainer.mediaExtractor,
             engineCoordinator = appContainer.engineCoordinator,
             downloadQueueManager = appContainer.downloadQueueManager,
-            settingsDataStore = appContainer.settingsDataStore
+            settingsDataStore = appContainer.settingsDataStore,
+            updateManager = appContainer.updateManager
         )
     }
 
@@ -51,7 +52,9 @@ class MainActivity : ComponentActivity() {
     private val settingsViewModel: SettingsViewModel by viewModels {
         SettingsViewModel.Factory(
             settingsDataStore = appContainer.settingsDataStore,
-            engineCoordinator = appContainer.engineCoordinator
+            engineCoordinator = appContainer.engineCoordinator,
+            updateManager = appContainer.updateManager,
+            apkUpdateVerifier = appContainer.apkUpdateVerifier
         )
     }
 

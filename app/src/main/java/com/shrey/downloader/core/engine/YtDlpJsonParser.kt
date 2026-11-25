@@ -138,7 +138,8 @@ object YtDlpJsonParser {
             val formatId = obj.optString("format_id").takeIf { it.isNotBlank() } ?: continue
             val ext = obj.optString("ext").lowercase().ifBlank { "mp4" }
 
-            // Skip non-media storyboard / image-sheet formats
+            // Skip non-media storyboard / image-sheet formats and explicitly DRM-protected streams
+            if (obj.optBoolean("has_drm", false)) continue
             if (ext == "mhtml" || ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp") continue
             val formatNote = obj.optString("format_note").takeIf { it.isNotBlank() }
             if (formatNote?.contains("storyboard", ignoreCase = true) == true) continue

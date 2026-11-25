@@ -17,6 +17,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -25,7 +27,10 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import com.shrey.downloader.core.design.ShreyGlassBottomBar
 import com.shrey.downloader.core.design.ShreyNavDestination
@@ -356,4 +361,243 @@ class ShreyUiRobolectricTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("top_gradual_blur").assertIsDisplayed()
     }
+
+    @Test
+    fun `top gradual blur renders in dark and light full and reduced modes without intercepting top touches`() {
+        var topButtonClicked = false
+        var modeState by mutableStateOf(com.shrey.downloader.domain.model.GlassEffectMode.FULL)
+        var themeState by mutableStateOf(ThemeMode.DARK)
+
+        composeRule.setContent {
+            ShreyTheme(themeMode = themeState, glassEffectMode = modeState) {
+                com.shrey.downloader.core.design.ShreyTopGradualBlurContainer(
+                    scrollProgress = 0.85f
+                ) {
+                    androidx.compose.material3.TextButton(
+                        onClick = { topButtonClicked = true },
+                        modifier = Modifier.testTag("top_under_blur_button")
+                    ) {
+                        androidx.compose.material3.Text("Top Action")
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("top_gradual_blur")
+            .assertIsDisplayed()
+            .assert(androidx.compose.ui.test.hasStateDescription("Top progressive backdrop blur active"))
+
+        // Clicking a control positioned at the top edge under the blur strip must work (zero touch interception)
+        composeRule.onNodeWithTag("top_under_blur_button").performClick()
+        assertTrue(topButtonClicked)
+
+        // Switching to Light + Reduced mode transitions cleanly to honest fallback scrim
+        themeState = ThemeMode.LIGHT
+        modeState = com.shrey.downloader.domain.model.GlassEffectMode.REDUCED
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("top_gradual_blur")
+            .assertIsDisplayed()
+            .assert(androidx.compose.ui.test.hasStateDescription("Top atmospheric scrim fallback active"))
+    }
+
+    @Test
+    fun `scaffold floating bottom bar never overlaps bottom settings item on narrow width and large font scale`() {
+        val destinations = listOf(
+            ShreyNavDestination("home", "Home", Icons.Outlined.Home, Icons.Filled.Home),
+            ShreyNavDestination("downloads", "Downloads", Icons.Outlined.Download, Icons.Filled.Download, 2),
+            ShreyNavDestination("library", "Library", Icons.Outlined.VideoLibrary, Icons.Filled.VideoLibrary),
+            ShreyNavDestination("settings", "Settings", Icons.Outlined.Settings, Icons.Filled.Settings)
+        )
+        val sampleUpdateSnapshot = com.shrey.downloader.core.update.UpdateSnapshot(
+            checkState = com.shrey.downloader.core.update.UpdateCheckState.UP_TO_DATE,
+            lastCheckedAtMillis = 1_750_000_000_000L,
+            engine = com.shrey.downloader.core.update.EngineUpdateStatus(
+                installedVersion = "2026.10.26",
+                lastKnownGoodVersion = "2026.10.26",
+                installedEjsVersion = "0.8.0",
+                installedPythonVersion = "3.12.11",
+                installedQuickJsVersion = "2025-04-26",
+                availableVersion = "2026.10.26",
+                compatibilityStatus = com.shrey.downloader.core.update.EngineCompatibilityStatus.COMPATIBLE
+            ),
+            app = com.shrey.downloader.core.update.AppUpdateStatus(
+                installedVersionName = "0.0.3-dev",
+                installedVersionCode = 3L,
+                latestVersionName = "0.0.3-dev"
+            )
+        )
+
+        composeRule.setContent {
+            val baseDensity = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
+                    density = baseDensity.density,
+                    fontScale = 1.4f
+                )
+            ) {
+                ShreyTheme {
+                    Box(modifier = Modifier.width(320.dp)) {
+                        androidx.compose.material3.Scaffold(
+                            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+                            bottomBar = {
+                                ShreyGlassBottomBar(
+                                    destinations = destinations,
+                                    selectedId = "settings",
+                                    onSelect = {}
+                                )
+                            }
+                        ) { innerPadding ->
+                            SettingsScreenContent(
+                                settings = ShreySettings(),
+                                engineState = readyEngine,
+                                updateSnapshot = sampleUpdateSnapshot,
+                                onThemeSelected = {},
+                                onGlassModeSelected = {},
+                                onDefaultModeSelected = {},
+                                onDefaultVideoQualitySelected = {},
+                                onDefaultAudioFormatSelected = {},
+                                onChooseFolder = {},
+                                onResetFolder = {},
+                                onAllowMobileDataChanged = {},
+                                onHapticsChanged = {},
+                                onNotificationsChanged = {},
+                                onRetryEngine = {},
+                                onOpenLicenses = {},
+                                onOpenAbout = {},
+                                contentBottomPadding = innerPadding
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("shrey_floating_bottom_bar").assertIsDisplayed()
+        // Scroll all the way to the bottom as a real user does so inner bottom clearance applies
+        repeat(12) {
+            composeRule.onNodeWithTag("settings_scroll_container").performTouchInput {
+                swipeUp(durationMillis = 120)
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings_about_row").assertIsDisplayed()
+
+        val aboutBounds = composeRule.onNodeWithTag("settings_about_row").fetchSemanticsNode().boundsInRoot
+        val bottomBarBounds = composeRule.onNodeWithTag("shrey_floating_bottom_bar").fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "Expected last Settings item (bottom=${aboutBounds.bottom}) to sit above floating bottom bar (top=${bottomBarBounds.top})",
+            aboutBounds.bottom <= bottomBarBounds.top + 1f
+        )
+    }
+
+    @Test
+    fun `settings updates card displays categories opens dialogs and handles actions`() {
+        var checkedNow = false
+        var downloadApkClicked = false
+        val updateSnapshot = com.shrey.downloader.core.update.UpdateSnapshot(
+            checkState = com.shrey.downloader.core.update.UpdateCheckState.UPDATE_AVAILABLE,
+            lastCheckedAtMillis = 1_750_000_000_000L,
+            engine = com.shrey.downloader.core.update.EngineUpdateStatus(
+                installedVersion = "2026.10.26",
+                lastKnownGoodVersion = "2026.10.26",
+                installedEjsVersion = "0.8.0",
+                installedPythonVersion = "3.12.11",
+                installedQuickJsVersion = "2025-04-26",
+                availableVersion = "2026.11.15",
+                compatibilityStatus = com.shrey.downloader.core.update.EngineCompatibilityStatus.UNSIGNED_UPSTREAM_ONLY,
+                updateAvailable = true
+            ),
+            app = com.shrey.downloader.core.update.AppUpdateStatus(
+                installedVersionName = "0.0.3-dev",
+                installedVersionCode = 3L,
+                latestVersionName = "0.0.4",
+                latestTagName = "v0.0.4",
+                updateAvailable = true,
+                releaseNotes = "Faster 4K remuxing and updated yt-dlp baseline.",
+                releasePageUrl = "https://github.com/NoWayShub/Shrey/releases/tag/v0.0.4",
+                apkDownloadUrl = "https://github.com/NoWayShub/Shrey/releases/download/v0.0.4/Shrey-v0.0.4.apk",
+                apkFileName = "Shrey-v0.0.4.apk",
+                apkSizeBytes = 248_000_000L
+            )
+        )
+
+        composeRule.setContent {
+            ShreyTheme {
+                com.shrey.downloader.feature.settings.SettingsUpdatesCard(
+                    snapshot = updateSnapshot,
+                    onCheckNow = { checkedNow = true },
+                    onDownloadAppApk = { downloadApkClicked = true },
+                    onOpenReleasePage = {},
+                    onOpenVerifiedApk = {},
+                    onAutoCheckChanged = {},
+                    onAutoInstallEngineChanged = {},
+                    onNotifyOnUpdatesChanged = {},
+                    onChannelSelected = {}
+                )
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings_updates_card").assertIsDisplayed()
+        composeRule.onNodeWithText("Shrey").assertIsDisplayed()
+        composeRule.onNodeWithText("yt-dlp").assertIsDisplayed()
+        composeRule.onNodeWithText("FFmpeg").assertIsDisplayed()
+        composeRule.onNodeWithTag("updates_check_now_button").performClick()
+        assertTrue(checkedNow)
+
+        composeRule.onNodeWithTag("updates_download_apk_button").performClick()
+        assertTrue(downloadApkClicked)
+
+        composeRule.onNodeWithTag("updates_diagnostics_button").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Update Diagnostics").assertIsDisplayed()
+        composeRule.onNodeWithText("Close").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("updates_release_notes_button").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Shrey v0.0.4").assertIsDisplayed()
+    }
+
+    @Test
+    fun `home error card shows installed yt-dlp version and engine update check button on http 403`() {
+        var checkUpdatesTriggered = false
+        composeRule.setContent {
+            ShreyTheme {
+                HomeScreenContent(
+                    urlInput = "https://youtube.com/watch?v=test403",
+                    uiState = HomeUiState.Error(
+                        com.shrey.downloader.domain.model.ShreyError.MediaRequestForbidden(
+                            details = "HTTP Error 403: Forbidden"
+                        )
+                    ),
+                    engineState = readyEngine,
+                    onUrlChanged = {},
+                    onPasteClick = {},
+                    onClearClick = {},
+                    onAnalyzeClick = {},
+                    onRetryEngine = {},
+                    onCheckEngineUpdates = { checkUpdatesTriggered = true },
+                    onModeSelected = {},
+                    onOptionSelected = {},
+                    onAudioFormatSelected = {},
+                    onThumbnailFormatSelected = {},
+                    onToggleTechnicalDetails = {},
+                    onStartDownload = {},
+                    onOpenDownloads = {},
+                    onOpenSettings = {},
+                    contentBottomPadding = PaddingValues(bottom = 124.dp)
+                )
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("error_engine_version").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("error_check_updates_button").performScrollTo().assertIsDisplayed().performClick()
+        assertTrue(checkUpdatesTriggered)
+    }
 }
+

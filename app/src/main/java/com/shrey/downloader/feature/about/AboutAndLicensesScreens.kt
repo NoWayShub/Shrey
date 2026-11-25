@@ -7,13 +7,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -34,13 +35,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
 import com.shrey.downloader.core.design.ShreyGlassCard
 import com.shrey.downloader.core.design.ShreyThemeTokens
-import com.shrey.downloader.core.design.ShreyTopGradualBlur
+import com.shrey.downloader.core.design.ShreyTopGradualBlurContainer
 
 @Composable
 fun AboutScreen(
@@ -48,23 +51,25 @@ fun AboutScreen(
     modifier: Modifier = Modifier
 ) {
     val palette = ShreyThemeTokens.palette
+    val density = LocalDensity.current
+    val statusBarTop = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
     val scroll = rememberScrollState()
     val topBlurProgress by remember {
-        derivedStateOf { (scroll.value / 96f).coerceIn(0f, 1f) }
+        derivedStateOf { (scroll.value / 72f).coerceIn(0f, 1f) }
     }
 
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.TopCenter
+    ShreyTopGradualBlurContainer(
+        scrollProgress = topBlurProgress,
+        modifier = modifier
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .widthIn(max = 640.dp)
                 .verticalScroll(scroll)
-                .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 18.dp),
+                .padding(horizontal = 20.dp)
+                .padding(top = statusBarTop + 18.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             SubScreenTopBar(title = "About Shrey", onBack = onBack)
@@ -80,7 +85,7 @@ fun AboutScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Version 0.0.2 · Native Android",
+                    text = "Version ${BuildConfig.VERSION_NAME} · Native Android",
                     style = MaterialTheme.typography.labelSmall,
                     color = palette.textSecondary
                 )
@@ -134,11 +139,6 @@ fun AboutScreen(
                 )
             }
         }
-
-        ShreyTopGradualBlur(
-            scrollProgress = topBlurProgress,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
     }
 }
 
@@ -187,23 +187,25 @@ fun LicensesScreen(
     modifier: Modifier = Modifier
 ) {
     val palette = ShreyThemeTokens.palette
+    val density = LocalDensity.current
+    val statusBarTop = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
     val scroll = rememberScrollState()
     val topBlurProgress by remember {
-        derivedStateOf { (scroll.value / 96f).coerceIn(0f, 1f) }
+        derivedStateOf { (scroll.value / 72f).coerceIn(0f, 1f) }
     }
 
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.TopCenter
+    ShreyTopGradualBlurContainer(
+        scrollProgress = topBlurProgress,
+        modifier = modifier
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .widthIn(max = 640.dp)
                 .verticalScroll(scroll)
-                .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 18.dp),
+                .padding(horizontal = 20.dp)
+                .padding(top = statusBarTop + 18.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             SubScreenTopBar(title = "Open-Source Licenses", onBack = onBack)
@@ -235,11 +237,6 @@ fun LicensesScreen(
                 }
             }
         }
-
-        ShreyTopGradualBlur(
-            scrollProgress = topBlurProgress,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
     }
 }
 

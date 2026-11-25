@@ -286,8 +286,29 @@ sealed class ShreyError(
 
     class LiveContentUnsupported(details: String? = null) : ShreyError(
         title = "Live stream unsupported",
-        userMessage = "Active live streams are not supported in Shrey v0.0.1.",
+        userMessage = "Active live streams are not currently supported in Shrey.",
         actionHint = "Wait until the broadcast finishes and is archived.",
+        technicalDetails = details
+    )
+
+    class MediaRequestForbidden(details: String? = null) : ShreyError(
+        title = "Media request denied (HTTP 403)",
+        userMessage = "The media host rejected the stream download request with HTTP 403 Forbidden. Stream URLs may have expired or been restricted by the host for this client.",
+        actionHint = "Re-analyze the link to refresh stream URLs, try another quality, or view technical details.",
+        technicalDetails = details
+    )
+
+    class RateLimited(details: String? = null) : ShreyError(
+        title = "Rate limited (HTTP 429)",
+        userMessage = "The media host temporarily throttled requests from this network (HTTP 429 Too Many Requests).",
+        actionHint = "Wait a few minutes before retrying.",
+        technicalDetails = details
+    )
+
+    class ExtractorCompatibilityError(details: String? = null) : ShreyError(
+        title = "Extractor compatibility issue",
+        userMessage = "The media host changed its streaming protocol or format handshake (such as SABR-only delivery) and the local extractor could not obtain a downloadable stream.",
+        actionHint = "Try a different quality or format, or inspect technical details.",
         technicalDetails = details
     )
 
@@ -355,7 +376,10 @@ data class EngineDiagnostics(
     val ytDlpVersion: String?,
     val ffmpegAvailable: Boolean,
     val jsRuntimeName: String?,
-    val jsRuntimeNote: String
+    val jsRuntimeNote: String,
+    val pythonVersion: String? = null,
+    val ejsVersion: String? = null,
+    val ffmpegVersion: String = "7.1.1"
 )
 
 sealed interface EngineState {

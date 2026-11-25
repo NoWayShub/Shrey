@@ -19,6 +19,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -47,6 +48,7 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.SystemUpdateAlt
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,8 +63,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
@@ -132,47 +132,30 @@ fun ShreyAmbientBackground(
 }
 
 /**
- * Shallow, iOS-inspired TOP-only gradual blur and atmospheric fade overlay.
- * Softly cushions scrolling content as it passes beneath the status bar without
- * hard edges, banding, or heavy per-frame full-screen blur overhead.
- * Intentionally applied only to the top edge (never the bottom).
+ * Standalone atmospheric top-edge fade scrim fallback.
+ * Prefer [ShreyTopGradualBlurContainer] for screens requiring real progressive GPU backdrop blur.
  */
 @Composable
 fun ShreyTopGradualBlur(
     scrollProgress: Float = 1f,
     modifier: Modifier = Modifier,
-    fadeHeightBelowStatusBar: Dp = 32.dp
+    fadeHeightBelowStatusBar: Dp = 28.dp
 ) {
     val palette = ShreyThemeTokens.palette
-    val glassMode = LocalGlassEffectMode.current
     val density = LocalDensity.current
     val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
     val totalHeight = statusBarHeight + fadeHeightBelowStatusBar
-
-    // Subtle ambient presence at rest; gently deepens as content scrolls beneath the status bar.
-    val intensity by animateFloatAsState(
-        targetValue = 0.44f + (0.56f * scrollProgress.coerceIn(0f, 1f)),
-        animationSpec = tween(durationMillis = 180),
-        label = "top_gradual_blur_intensity"
-    )
-
+    val clamped = scrollProgress.coerceIn(0f, 1f)
+    val intensity = 0.36f + (0.64f * clamped)
     val baseColor = palette.backgroundPrimary
-    val frostedVeil = if (palette.isDark) {
-        Color(0xFF10131A)
-    } else {
-        Color(0xFFFFFFFF)
-    }
 
-    // Smooth cubic-eased multi-stop alpha gradient eliminates visible banding across dark & light themes.
     val topVeilBrush = remember(baseColor, intensity) {
         Brush.verticalGradient(
-            0.00f to baseColor.copy(alpha = 0.90f * intensity),
-            0.22f to baseColor.copy(alpha = 0.80f * intensity),
-            0.40f to baseColor.copy(alpha = 0.62f * intensity),
-            0.56f to baseColor.copy(alpha = 0.40f * intensity),
-            0.70f to baseColor.copy(alpha = 0.22f * intensity),
-            0.82f to baseColor.copy(alpha = 0.10f * intensity),
-            0.92f to baseColor.copy(alpha = 0.03f * intensity),
+            0.00f to baseColor.copy(alpha = 0.88f * intensity),
+            0.26f to baseColor.copy(alpha = 0.76f * intensity),
+            0.50f to baseColor.copy(alpha = 0.50f * intensity),
+            0.72f to baseColor.copy(alpha = 0.24f * intensity),
+            0.88f to baseColor.copy(alpha = 0.07f * intensity),
             1.00f to Color.Transparent
         )
     }
@@ -181,33 +164,9 @@ fun ShreyTopGradualBlur(
         modifier = modifier
             .fillMaxWidth()
             .height(totalHeight)
+            .background(topVeilBrush)
             .testTag("top_gradual_blur")
-    ) {
-        // Soft diffused frosted mist band confined to the upper status-bar edge on API 31+ in Full Glass mode.
-        if (glassMode == GlassEffectMode.FULL && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val mistAlpha = (if (palette.isDark) 0.22f else 0.36f) * intensity
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(statusBarHeight + (fadeHeightBelowStatusBar * 0.55f))
-                    .blur(radius = 12.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
-                    .background(
-                        Brush.verticalGradient(
-                            0.0f to frostedVeil.copy(alpha = mistAlpha),
-                            0.6f to frostedVeil.copy(alpha = mistAlpha * 0.45f),
-                            1.0f to Color.Transparent
-                        )
-                    )
-            )
-        }
-
-        // Primary smooth multi-stop atmospheric dissolve
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(topVeilBrush)
-        )
-    }
+    )
 }
 
 /**
@@ -737,90 +696,109 @@ fun ShreyGlassBottomBar(
 ) {
     val palette = ShreyThemeTokens.palette
     val haptics = rememberShreyHaptics()
+    val fontScale = LocalDensity.current.fontScale
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 10.dp),
+            .testTag("shrey_floating_bottom_bar"),
         contentAlignment = Alignment.Center
     ) {
-        ShreyGlassSurface(
+        val isCompactWidth = maxWidth < 360.dp
+        val outerHorizontalPad = if (isCompactWidth) 12.dp else 18.dp
+        val itemSpacing = if (isCompactWidth) 2.dp else 4.dp
+        val showCompactLabels = isCompactWidth || fontScale > 1.25f
+
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .widthIn(max = 520.dp),
-            shape = RoundedCornerShape(28.dp),
-            elevated = true,
-            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                .padding(start = outerHorizontalPad, end = outerHorizontalPad, top = 6.dp, bottom = 10.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
+            ShreyGlassSurface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 520.dp),
+                shape = RoundedCornerShape(28.dp),
+                elevated = true,
+                contentPadding = PaddingValues(horizontal = 5.dp, vertical = 5.dp)
             ) {
-                destinations.forEach { dest ->
-                    val isSelected = dest.id == selectedId
-                    val pillColor by animateColorAsState(
-                        targetValue = if (isSelected) palette.pillSelectedFill else Color.Transparent,
-                        label = "nav_pill"
-                    )
-                    val tint by animateColorAsState(
-                        targetValue = if (isSelected) palette.textPrimary else palette.textTertiary,
-                        label = "nav_tint"
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(itemSpacing),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    destinations.forEach { dest ->
+                        val isSelected = dest.id == selectedId
+                        val pillColor by animateColorAsState(
+                            targetValue = if (isSelected) palette.pillSelectedFill else Color.Transparent,
+                            label = "nav_pill"
+                        )
+                        val tint by animateColorAsState(
+                            targetValue = if (isSelected) palette.textPrimary else palette.textTertiary,
+                            label = "nav_tint"
+                        )
 
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .defaultMinSize(minHeight = 52.dp)
-                            .clip(RoundedCornerShape(22.dp))
-                            .background(pillColor)
-                            .clickable(
-                                role = Role.Tab,
-                                onClick = {
-                                    if (!isSelected) {
-                                        haptics.tap()
-                                        onSelect(dest.id)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .defaultMinSize(minHeight = 50.dp)
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(pillColor)
+                                .clickable(
+                                    role = Role.Tab,
+                                    onClick = {
+                                        if (!isSelected) {
+                                            haptics.tap()
+                                            onSelect(dest.id)
+                                        }
+                                    }
+                                )
+                                .semantics {
+                                    selected = isSelected
+                                    contentDescription = dest.label
+                                }
+                                .testTag("nav_${dest.id}")
+                                .padding(horizontal = 3.dp, vertical = 5.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Box {
+                                    Icon(
+                                        imageVector = if (isSelected) dest.selectedIcon else dest.icon,
+                                        contentDescription = null,
+                                        tint = tint,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    if (dest.badgeCount > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(palette.accentSolid)
+                                        )
                                     }
                                 }
-                            )
-                            .semantics {
-                                selected = isSelected
-                                contentDescription = dest.label
-                            }
-                            .testTag("nav_${dest.id}")
-                            .padding(vertical = 6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Box {
-                                Icon(
-                                    imageVector = if (isSelected) dest.selectedIcon else dest.icon,
-                                    contentDescription = null,
-                                    tint = tint,
-                                    modifier = Modifier.size(21.dp)
+                                Text(
+                                    text = dest.label,
+                                    style = (if (showCompactLabels) {
+                                        MaterialTheme.typography.labelSmall
+                                    } else {
+                                        MaterialTheme.typography.labelMedium
+                                    }).copy(
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                                    ),
+                                    color = tint,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
                                 )
-                                if (dest.badgeCount > 0) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(palette.accentSolid)
-                                    )
-                                }
                             }
-                            Text(
-                                text = dest.label,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
-                                ),
-                                color = tint,
-                                maxLines = 1
-                            )
                         }
                     }
                 }
@@ -885,6 +863,10 @@ fun ShreyErrorCard(
     actionHint: String,
     technicalDetails: String?,
     onRetry: (() -> Unit)? = null,
+    engineVersionLabel: String? = null,
+    updateCheckStatusLabel: String? = null,
+    onCheckEngineUpdates: (() -> Unit)? = null,
+    isCheckingUpdates: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val palette = ShreyThemeTokens.palette
@@ -919,6 +901,24 @@ fun ShreyErrorCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = palette.textSecondary
                 )
+                if (!engineVersionLabel.isNullOrBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Installed engine: $engineVersionLabel",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary,
+                        modifier = Modifier.testTag("error_engine_version")
+                    )
+                }
+                if (!updateCheckStatusLabel.isNullOrBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = updateCheckStatusLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textPrimary,
+                        modifier = Modifier.testTag("error_update_status")
+                    )
+                }
                 if (actionHint.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text(
@@ -932,25 +932,39 @@ fun ShreyErrorCard(
 
         Spacer(Modifier.height(14.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (onRetry != null) {
-                ShreyGlassButton(
-                    text = "Retry",
-                    onClick = onRetry,
-                    modifier = Modifier.testTag("error_retry_button")
-                )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (onRetry != null) {
+                    ShreyGlassButton(
+                        text = "Retry",
+                        onClick = onRetry,
+                        modifier = Modifier.testTag("error_retry_button")
+                    )
+                }
+                if (!technicalDetails.isNullOrBlank()) {
+                    ShreyGlassButton(
+                        text = if (expanded) "Hide Details" else "Technical Details",
+                        leadingIcon = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                        onClick = { expanded = !expanded },
+                        contentColor = palette.textSecondary,
+                        modifier = Modifier.testTag("error_details_toggle")
+                    )
+                }
             }
-            if (!technicalDetails.isNullOrBlank()) {
+            if (onCheckEngineUpdates != null) {
                 ShreyGlassButton(
-                    text = if (expanded) "Hide Details" else "Technical Details",
-                    leadingIcon = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                    onClick = { expanded = !expanded },
-                    contentColor = palette.textSecondary,
-                    modifier = Modifier.testTag("error_details_toggle")
+                    text = if (isCheckingUpdates) "Checking Updates…" else "Check Engine Updates",
+                    leadingIcon = Icons.Outlined.SystemUpdateAlt,
+                    enabled = !isCheckingUpdates,
+                    onClick = onCheckEngineUpdates,
+                    contentColor = palette.textPrimary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("error_check_updates_button")
                 )
             }
         }

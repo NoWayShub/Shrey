@@ -113,7 +113,12 @@ class YtDlpMediaExtractor(
         if (lower.contains("no supported javascript runtime") ||
             lower.contains("n challenge solving failed")
         ) {
-            warnings += "Some high-resolution formats may be unavailable because no external JS runtime (yt-dlp-ejs) is bundled."
+            warnings += "Some high-resolution formats may be unavailable because a JavaScript challenge could not be solved locally."
+        }
+        if (lower.contains("forcing sabr streaming") ||
+            (lower.contains("sabr") && lower.contains("missing a url"))
+        ) {
+            warnings += "Some formats were skipped because the host is enforcing SABR streaming for that client."
         }
         return warnings
     }

@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.shrey.downloader.core.engine.EngineCoordinator
 import com.shrey.downloader.core.engine.FormatSelectionMapper
 import com.shrey.downloader.core.service.DownloadQueueManager
+import com.shrey.downloader.core.update.UpdateManager
+import com.shrey.downloader.core.update.UpdateSnapshot
 import com.shrey.downloader.core.validation.UrlValidationResult
 import com.shrey.downloader.core.validation.UrlValidator
 import com.shrey.downloader.data.local.SettingsDataStore
@@ -53,7 +55,8 @@ class HomeViewModel(
     private val mediaExtractor: MediaExtractor,
     private val engineCoordinator: EngineCoordinator,
     private val downloadQueueManager: DownloadQueueManager,
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val updateManager: UpdateManager? = null
 ) : ViewModel() {
 
     private val _urlInput = MutableStateFlow("")
@@ -63,6 +66,8 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     val engineState: StateFlow<EngineState> = engineCoordinator.state
+
+    val updateSnapshot: StateFlow<UpdateSnapshot>? = updateManager?.snapshot
 
     val settings: StateFlow<ShreySettings> = settingsDataStore.settingsFlow.stateIn(
         scope = viewModelScope,
@@ -263,6 +268,17 @@ class HomeViewModel(
         }
     }
 
+    /**
+     * Triggered from an extractor failure card. Respects UpdateManager cooldown so repeated
+     * taps never hammer upstream GitHub release APIs.
+     */
+    fun checkEngineUpdatesFromError() {
+        val manager = updateManager ?: return
+        viewModelScope.launch {
+            manager.checkForUpdates(forceManual = false, notifyIfAvailable = false)
+        }
+    }
+
     private fun resolveInitialMode(media: MediaInfo, preferred: DownloadMode): DownloadMode {
         val preferredOptions = FormatSelectionMapper.buildOptions(media, preferred)
         if (preferredOptions.isNotEmpty()) return preferred
@@ -275,7 +291,8 @@ class HomeViewModel(
         private val mediaExtractor: MediaExtractor,
         private val engineCoordinator: EngineCoordinator,
         private val downloadQueueManager: DownloadQueueManager,
-        private val settingsDataStore: SettingsDataStore
+        private val settingsDataStore: SettingsDataStore,
+        private val updateManager: UpdateManager
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -283,7 +300,8 @@ class HomeViewModel(
                 mediaExtractor = mediaExtractor,
                 engineCoordinator = engineCoordinator,
                 downloadQueueManager = downloadQueueManager,
-                settingsDataStore = settingsDataStore
+                settingsDataStore = settingsDataStore,
+                updateManager = updateManager
             ) as T
         }
     }

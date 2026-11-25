@@ -13,12 +13,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -42,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -54,27 +56,35 @@ import com.shrey.downloader.core.design.ShreyGlassCard
 import com.shrey.downloader.core.design.ShreyGlassTextField
 import com.shrey.downloader.core.design.ShreyPrimaryPillButton
 import com.shrey.downloader.core.design.ShreyThemeTokens
-import com.shrey.downloader.core.design.ShreyTopGradualBlur
+import com.shrey.downloader.core.design.ShreyTopGradualBlurContainer
+import com.shrey.downloader.core.engine.EngineCoordinator
+import com.shrey.downloader.core.update.UpdateCheckState
+import com.shrey.downloader.core.update.UpdateSnapshot
 import com.shrey.downloader.domain.model.EngineState
+import com.shrey.downloader.domain.model.ShreyError
+import com.shrey.downloader.navigation.LocalShreyBottomBarPadding
 
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
-    contentBottomPadding: PaddingValues,
+    contentBottomPadding: PaddingValues? = null,
     modifier: Modifier = Modifier
 ) {
     val urlInput by viewModel.urlInput.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val engineState by viewModel.engineState.collectAsStateWithLifecycle()
+    val updateSnapshot = viewModel.updateSnapshot?.collectAsStateWithLifecycle()?.value
     val clipboard = LocalClipboardManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val effectiveBottomPadding = contentBottomPadding ?: LocalShreyBottomBarPadding.current
 
     HomeScreenContent(
         urlInput = urlInput,
         uiState = uiState,
         engineState = engineState,
+        updateSnapshot = updateSnapshot,
         onUrlChanged = viewModel::onUrlChanged,
         onPasteClick = {
             val text = clipboard.getText()?.text
@@ -86,6 +96,7 @@ fun HomeScreen(
             viewModel.analyzeCurrentUrl()
         },
         onRetryEngine = viewModel::retryEngineInit,
+        onCheckEngineUpdates = viewModel::checkEngineUpdatesFromError,
         onModeSelected = viewModel::onModeSelected,
         onOptionSelected = viewModel::onOptionSelected,
         onAudioFormatSelected = viewModel::onAudioFormatSelected,
@@ -94,7 +105,7 @@ fun HomeScreen(
         onStartDownload = viewModel::startSelectedDownload,
         onOpenDownloads = onOpenDownloads,
         onOpenSettings = onOpenSettings,
-        contentBottomPadding = contentBottomPadding,
+        contentBottomPadding = effectiveBottomPadding,
         modifier = modifier
     )
 }
@@ -118,26 +129,33 @@ fun HomeScreenContent(
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
     contentBottomPadding: PaddingValues,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    updateSnapshot: UpdateSnapshot? = null,
+    onCheckEngineUpdates: (() -> Unit)? = null
 ) {
     val palette = ShreyThemeTokens.palette
+    val density = LocalDensity.current
+    val statusBarTop = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
     val scrollState = rememberScrollState()
     val topBlurProgress by remember {
-        derivedStateOf { (scrollState.value / 96f).coerceIn(0f, 1f) }
+        derivedStateOf { (scrollState.value / 72f).coerceIn(0f, 1f) }
     }
 
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.TopCenter
+    ShreyTopGradualBlurContainer(
+        scrollProgress = topBlurProgress,
+        modifier = modifier
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .widthIn(max = 640.dp)
                 .verticalScroll(scrollState)
-                .statusBarsPadding()
                 .padding(horizontal = 20.dp)
-                .padding(top = 16.dp, bottom = contentBottomPadding.calculateBottomPadding() + 8.dp),
+                .padding(
+                    top = statusBarTop + 16.dp,
+                    bottom = contentBottomPadding.calculateBottomPadding() + 12.dp
+                )
+                .testTag("home_scroll_container"),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Top Brand Header
@@ -262,23 +280,43 @@ fun HomeScreenContent(
                     }
 
                     is HomeUiState.Error -> {
+                        val isExtractorRelated = state.error is ShreyError.MediaRequestForbidden ||
+                            state.error is ShreyError.ExtractorCompatibilityError ||
+                            state.error is ShreyError.MissingRuntimeDependency ||
+                            state.error is ShreyError.ExtractorFailure
+                        val installedEngineVer = (engineState as? EngineState.Ready)?.diagnostics?.ytDlpVersion
+                            ?: updateSnapshot?.engine?.installedVersion
+                            ?: EngineCoordinator.BUNDLED_YT_DLP_VERSION
+                        val updateFeedback = if (isExtractorRelated && updateSnapshot != null) {
+                            when {
+                                updateSnapshot.checkState == UpdateCheckState.CHECKING ->
+                                    "Checking official release metadata…"
+                                updateSnapshot.engine.updateAvailable && updateSnapshot.engine.availableVersion != null ->
+                                    "yt-dlp ${updateSnapshot.engine.availableVersion} detected — review in Settings > Updates."
+                                updateSnapshot.lastCheckedAtMillis != null ->
+                                    "Engine is up to date ($installedEngineVer)."
+                                else -> null
+                            }
+                        } else {
+                            null
+                        }
+
                         ShreyErrorCard(
                             title = state.error.title,
                             message = state.error.userMessage,
                             actionHint = state.error.actionHint,
                             technicalDetails = state.error.technicalDetails,
                             onRetry = onAnalyzeClick,
+                            engineVersionLabel = if (isExtractorRelated) "yt-dlp $installedEngineVer" else null,
+                            updateCheckStatusLabel = updateFeedback,
+                            onCheckEngineUpdates = if (isExtractorRelated) onCheckEngineUpdates else null,
+                            isCheckingUpdates = updateSnapshot?.checkState == UpdateCheckState.CHECKING,
                             modifier = Modifier.testTag("home_error_card")
                         )
                     }
                 }
             }
         }
-
-        ShreyTopGradualBlur(
-            scrollProgress = topBlurProgress,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
     }
 }
 

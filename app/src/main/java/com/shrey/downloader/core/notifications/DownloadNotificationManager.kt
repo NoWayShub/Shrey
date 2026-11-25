@@ -31,8 +31,17 @@ class DownloadNotificationManager(private val context: Context) {
             description = context.getString(R.string.notification_channel_downloads_desc)
             setShowBadge(false)
         }
+        val updatesChannel = NotificationChannel(
+            UPDATES_CHANNEL_ID,
+            context.getString(R.string.notification_channel_updates),
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = context.getString(R.string.notification_channel_updates_desc)
+            setShowBadge(false)
+        }
         val sysManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         sysManager.createNotificationChannel(channel)
+        sysManager.createNotificationChannel(updatesChannel)
     }
 
     fun hasNotificationPermission(): Boolean {
@@ -180,9 +189,38 @@ class DownloadNotificationManager(private val context: Context) {
         runCatching { manager.cancel(ACTIVE_NOTIFICATION_ID) }
     }
 
+    fun showUpdateAvailableNotification(
+        summary: String,
+        notificationsEnabled: Boolean
+    ) {
+        if (!notificationsEnabled || !hasNotificationPermission()) return
+        ensureChannel()
+        val openIntent = PendingIntent.getActivity(
+            context,
+            UPDATE_NOTIFICATION_ID,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, UPDATES_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle(context.getString(R.string.notification_update_available_title))
+            .setContentText(summary)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(summary))
+            .setAutoCancel(true)
+            .setContentIntent(openIntent)
+            .build()
+        runCatching {
+            manager.notify(UPDATE_NOTIFICATION_ID, notification)
+        }
+    }
+
     companion object {
         const val CHANNEL_ID = "shrey_downloads_channel"
+        const val UPDATES_CHANNEL_ID = "shrey_updates_channel"
         const val ACTIVE_NOTIFICATION_ID = 4001
+        const val UPDATE_NOTIFICATION_ID = 4099
         private const val COMPLETION_NOTIFICATION_BASE = 5000
     }
 }

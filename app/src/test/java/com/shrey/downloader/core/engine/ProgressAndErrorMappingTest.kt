@@ -70,6 +70,37 @@ class ProgressAndErrorMappingTest {
             ErrorTranslator.translate(RuntimeException("ERROR: Postprocessing: FFmpeg conversion failed"))
                 is ShreyError.ConversionFailed
         )
+        assertTrue(
+            ErrorTranslator.translate(RuntimeException("ERROR: HTTP Error 429: Too Many Requests"))
+                is ShreyError.RateLimited
+        )
+        assertTrue(
+            ErrorTranslator.translate(RuntimeException("WARNING: YouTube is forcing SABR streaming for this client"))
+                is ShreyError.ExtractorCompatibilityError
+        )
+        assertTrue(
+            ErrorTranslator.translate(RuntimeException("ERROR: [Errno 28] No space left on device (ENOSPC)"))
+                is ShreyError.InsufficientStorage
+        )
+        assertTrue(
+            ErrorTranslator.translate(RuntimeException("Failed to create MediaStore entry: Permission denied"))
+                is ShreyError.StorageWriteFailed
+        )
+    }
+
+    @Test
+    fun `classifies confirmed real-device HTTP 403 and SABR log as MediaRequestForbidden`() {
+        val realDeviceLog = """
+            WARNING: Your yt-dlp version (2025.11.12) is older than 90 days!
+            WARNING: Some web client https formats have been skipped as they are missing a URL. YouTube is forcing SABR streaming for this client.
+            ERROR: unable to download video data: HTTP Error 403: Forbidden
+        """.trimIndent()
+
+        val translated = ErrorTranslator.translateMessage(realDeviceLog)
+        assertTrue(translated is ShreyError.MediaRequestForbidden)
+        assertFalse(translated is ShreyError.ExtractorFailure)
+        assertTrue(translated.title.contains("403"))
+        assertTrue(translated.userMessage.contains("403"))
     }
 
     @Test
@@ -82,3 +113,4 @@ class ProgressAndErrorMappingTest {
         assertTrue(redacted.contains("[LOCAL_PATH]"))
     }
 }
+

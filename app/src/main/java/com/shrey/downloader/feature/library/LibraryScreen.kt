@@ -9,12 +9,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -59,20 +60,22 @@ import com.shrey.downloader.core.design.ShreyGlassCard
 import com.shrey.downloader.core.design.ShreyGlassIconButton
 import com.shrey.downloader.core.design.ShreySegmentedControl
 import com.shrey.downloader.core.design.ShreyThemeTokens
-import com.shrey.downloader.core.design.ShreyTopGradualBlur
+import com.shrey.downloader.core.design.ShreyTopGradualBlurContainer
 import com.shrey.downloader.core.utilities.Formatters
 import com.shrey.downloader.domain.model.DownloadItem
 import com.shrey.downloader.domain.model.DownloadMode
 import com.shrey.downloader.domain.model.LibraryFilter
+import com.shrey.downloader.navigation.LocalShreyBottomBarPadding
 
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
-    contentBottomPadding: PaddingValues,
+    contentBottomPadding: PaddingValues? = null,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val effectiveBottomPadding = contentBottomPadding ?: LocalShreyBottomBarPadding.current
 
     LaunchedEffect(Unit) {
         viewModel.refreshAccessibility()
@@ -107,7 +110,7 @@ fun LibraryScreen(
         },
         onRemoveRecord = viewModel::removeFromHistory,
         onDeleteFile = viewModel::deleteFileAndRecord,
-        contentBottomPadding = contentBottomPadding,
+        contentBottomPadding = effectiveBottomPadding,
         modifier = modifier
     )
 }
@@ -124,31 +127,32 @@ fun LibraryScreenContent(
     modifier: Modifier = Modifier
 ) {
     val palette = ShreyThemeTokens.palette
+    val density = LocalDensity.current
+    val statusBarTop = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
     val listState = rememberLazyListState()
     val topBlurProgress by remember {
         derivedStateOf {
             if (listState.firstVisibleItemIndex > 0) 1f
-            else (listState.firstVisibleItemScrollOffset / 96f).coerceIn(0f, 1f)
+            else (listState.firstVisibleItemScrollOffset / 72f).coerceIn(0f, 1f)
         }
     }
     var confirmDelete by remember { mutableStateOf<DownloadItem?>(null) }
 
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.TopCenter
+    ShreyTopGradualBlurContainer(
+        scrollProgress = topBlurProgress,
+        modifier = modifier
     ) {
         LazyColumn(
             state = listState,
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .widthIn(max = 640.dp)
-                .statusBarsPadding()
                 .testTag("library_list"),
             contentPadding = PaddingValues(
                 start = 20.dp,
                 end = 20.dp,
-                top = 16.dp,
-                bottom = contentBottomPadding.calculateBottomPadding() + 8.dp
+                top = statusBarTop + 16.dp,
+                bottom = contentBottomPadding.calculateBottomPadding() + 12.dp
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -199,11 +203,6 @@ fun LibraryScreenContent(
                 }
             }
         }
-
-        ShreyTopGradualBlur(
-            scrollProgress = topBlurProgress,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
     }
 
     confirmDelete?.let { target ->
