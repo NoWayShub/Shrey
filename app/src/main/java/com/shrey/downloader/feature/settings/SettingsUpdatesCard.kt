@@ -102,7 +102,7 @@ fun SettingsUpdatesCard(
                     .testTag("updates_status_badge")
             ) {
                 Text(
-                    text = snapshot.checkState.label,
+                    text = snapshot.statusBadgeLabel,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
                     color = statusBadgeColor,
                     maxLines = 1
@@ -119,22 +119,43 @@ fun SettingsUpdatesCard(
         Spacer(Modifier.height(3.dp))
         UpdateMetaRow(
             label = "Latest (${snapshot.preferences.channel.label})",
-            value = snapshot.app.latestVersionName ?: "Not checked"
+            value = when {
+                snapshot.app.latestVersionName != null -> snapshot.app.latestVersionName
+                snapshot.lastCheckedAtMillis != null && snapshot.checkState != UpdateCheckState.FAILED ->
+                    "No ${snapshot.preferences.channel.label.lowercase()} release"
+                else -> "Not checked"
+            }
         )
         Spacer(Modifier.height(3.dp))
         UpdateMetaRow(
-            label = "Availability",
+            label = "App status",
             value = when {
+                snapshot.checkState == UpdateCheckState.FAILED -> "Check failed"
                 snapshot.app.updateAvailable -> {
                     val size = snapshot.app.apkSizeBytes?.takeIf { it > 0L }
                         ?.let { " · ${Formatters.formatBytes(it)}" }.orEmpty()
-                    "Update available$size"
+                    "Shrey app update available$size"
                 }
                 snapshot.lastCheckedAtMillis != null -> "Up to date"
                 else -> "Check to inspect"
             },
-            valueColor = if (snapshot.app.updateAvailable) palette.statusWarning else palette.textPrimary
+            valueColor = when {
+                snapshot.checkState == UpdateCheckState.FAILED -> palette.statusError
+                snapshot.app.updateAvailable -> palette.statusWarning
+                snapshot.lastCheckedAtMillis != null -> palette.statusSuccess
+                else -> palette.textPrimary
+            }
         )
+        if (snapshot.app.updateAvailable) {
+            snapshot.app.latestReleaseTitle?.takeIf { it.isNotBlank() }?.let { title ->
+                Spacer(Modifier.height(3.dp))
+                UpdateMetaRow("Release", title)
+            }
+            snapshot.app.latestPublishedAt?.takeIf { it.isNotBlank() }?.let { published ->
+                Spacer(Modifier.height(3.dp))
+                UpdateMetaRow("Published", published.substringBefore('T'))
+            }
+        }
 
         Spacer(Modifier.height(10.dp))
         HorizontalDivider(color = palette.divider)
@@ -154,6 +175,22 @@ fun SettingsUpdatesCard(
         )
         Spacer(Modifier.height(3.dp))
         UpdateMetaRow(
+            label = "Engine status",
+            value = when {
+                snapshot.checkState == UpdateCheckState.FAILED -> "Check failed"
+                snapshot.engine.updateAvailable -> "yt-dlp update available"
+                snapshot.lastCheckedAtMillis != null -> "Up to date"
+                else -> "Check to inspect"
+            },
+            valueColor = when {
+                snapshot.checkState == UpdateCheckState.FAILED -> palette.statusError
+                snapshot.engine.updateAvailable -> palette.statusWarning
+                snapshot.lastCheckedAtMillis != null -> palette.statusSuccess
+                else -> palette.textPrimary
+            }
+        )
+        Spacer(Modifier.height(3.dp))
+        UpdateMetaRow(
             label = "Compatibility",
             value = snapshot.engine.compatibilityStatus.label,
             valueColor = if (snapshot.engine.updateAvailable) palette.statusWarning else palette.statusSuccess
@@ -163,7 +200,7 @@ fun SettingsUpdatesCard(
         HorizontalDivider(color = palette.divider)
         Spacer(Modifier.height(10.dp))
 
-        // 3. FFmpeg bundled native status
+        // 3. FFmpeg bundled native status (informational only; delivered inside signed Shrey APKs)
         UpdateCategoryHeader("FFmpeg")
         Spacer(Modifier.height(4.dp))
         UpdateMetaRow("Bundled", snapshot.ffmpeg.bundledVersion)
@@ -171,9 +208,9 @@ fun SettingsUpdatesCard(
         UpdateMetaRow(
             label = "Delivery",
             value = if (snapshot.ffmpeg.availableViaAppUpdate) {
-                "Newer signed Shrey APK available"
+                "Included with Shrey app update"
             } else {
-                "Signed Shrey APK releases"
+                "Bundled in signed Shrey APKs"
             },
             valueColor = if (snapshot.ffmpeg.availableViaAppUpdate) palette.statusWarning else palette.textSecondary
         )

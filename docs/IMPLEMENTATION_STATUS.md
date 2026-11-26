@@ -1,24 +1,23 @@
-# Shrey v0.0.3 — Implementation Status
+# Shrey v0.0.4 — Implementation Status
 
 ## Current Milestone
-v0.0.3 Beta Release (Intelligent Updates & Liquid Glass)
+v0.0.4 Beta Release (Playlists, Channel Bulk Downloads & Liquid Glass)
 
-## v0.0.3 Key Additions
-- **Intelligent Update Subsystem (`core/update/`):**
-  - Single-flight `UpdateManager` checking GitHub releases (Stable & Beta channels), `yt-dlp` updates, and bundled FFmpeg compatibility (`7.1.1`).
-  - `DailyUpdateCheckWorker` (`WorkManager 2.10.0`) for periodic background update checks and notifications.
-  - Cryptographic verification via `UpdateManifestVerifier` (ECDSA-SHA256 P-256) and `ApkUpdateVerifier` (SHA-256 & signing certificate validation).
-  - `SafeEngineUpdater` providing staged archive swaps, smoke verification, and automatic rollback to last-known-good engine state.
-  - `YtDlpArchiveInspector` for fast in-process inspection of `yt-dlp` and `yt-dlp-ejs` archive versions without spawning Python.
-- **Settings Updates Card (`SettingsUpdatesCard.kt`):**
-  - Integrated Liquid Glass update card in Settings with channel selector, auto-check preferences, live compatibility details, and release notes preview.
-- **Liquid Glass Refinement (`ShreyTopGradualBlur.kt`, `ShreyGlassComponents.kt`):**
-  - Dedicated `ShreyTopGradualBlur` component and updated UI navigation/card layouts.
-- **Test Coverage:** 55 automated unit & Robolectric tests verified passing (0 failures, 0 errors).
+## v0.0.4 Key Additions
+- **Smart URL Classification & Paginated Collection Extraction (`MediaUrlClassifier`, `YtDlpCollectionExtractor`):**
+  - Canonical URI classification for single videos, playlists, YouTube channels (`Videos`, `Shorts`, `Completed Streams` tabs), and ambiguous video/playlist links.
+  - Incremental `--flat-playlist` extraction (`50` items/page) preventing excessive memory consumption on large channels.
+- **Batch Download Orchestration (`BatchDownloadCoordinator`, Room v3):**
+  - Extends `DownloadQueueManager` with global `concurrency = 1`, cross-queue deduplication, `BulkQualityPreset` & `ChannelScopePreset` selection, subfolder organization, pause/resume, and process-death recovery.
+  - Persistent Room entities (`DownloadBatchEntity`, `BatchItemEntity`, `ChannelDiscoveryCheckpointEntity`) with non-destructive migrations (`MIGRATION_1_2`, `MIGRATION_2_3`).
+- **Batch & Collection UI (`CollectionPreviewCards.kt`, `BatchDownloadCards.kt`):**
+  - Interactive playlist/channel entry preview, tab/scope controls, and live batch progress cards matching the Liquid Glass design system.
+- **Version & Update Polish (`UpdateVersionComparator.kt`, `UpdateCheckerV004Test.kt`):**
+  - Refined `versionCode` + SemVer precedence rules for safe in-app release vs. prerelease checks.
 
-## Completed Baseline (v0.0.1 – v0.0.2)
+## Completed Baseline (v0.0.1 – v0.0.3)
 - **Foundation & Engine:** `applicationId = "com.shrey.downloader"`, `minSdk = 29`, `targetSdk = 36`, multi-ABI (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`), `youtubedl-android:0.18.1` + `:ffmpeg:0.18.1`, `UrlValidator`, `YtDlpMediaExtractor`, `YtDlpDownloadEngine`, `MediaStoragePublisher`, Room queue & DataStore preferences, and foreground `ShreyDownloadService`.
-- **UI Ergonomics:** Adaptive bottom navigation bar clearance, compact secondary icon actions, narrow-display wrapping, and top-only gradual blur.
+- **Intelligent Updates:** Single-flight `UpdateManager`, `DailyUpdateCheckWorker` (WorkManager), `UpdateManifestVerifier` (ECDSA-SHA256 P-256), `ApkUpdateVerifier`, and `SafeEngineUpdater` rollback support.
 
 ## Known Limitations
 - **yt-dlp-ejs JS Runtime:** `youtubedl-android:0.18.1` does not bundle an external Deno runtime; Shrey inspects bundled QuickJS/EJS versions honestly and reports compatibility live in Settings diagnostics.

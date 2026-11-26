@@ -2,6 +2,8 @@ package com.shrey.downloader.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
@@ -19,10 +21,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -599,5 +603,424 @@ class ShreyUiRobolectricTest {
         composeRule.onNodeWithTag("error_check_updates_button").performScrollTo().assertIsDisplayed().performClick()
         assertTrue(checkUpdatesTriggered)
     }
+
+    @Test
+    fun `v0_0_4 uses stronger two-stage 8dp to 28dp progressive top gradual blur with compact 36dp reach`() {
+        val spec = com.shrey.downloader.core.design.ShreyTopBlurDefaults.Standard
+        val restRadius = com.shrey.downloader.core.design.ShreyTopBlurDefaults.effectiveBlurRadius(spec, 0f)
+        val maxRadius = com.shrey.downloader.core.design.ShreyTopBlurDefaults.effectiveBlurRadius(spec, 1f)
+        val midMaxRadius = com.shrey.downloader.core.design.ShreyTopBlurDefaults.effectiveMidBlurRadius(spec, 1f)
+        assertEquals(8.dp, restRadius)
+        assertEquals(28.dp, maxRadius)
+        assertEquals(12.dp, midMaxRadius)
+        assertEquals(36.dp, spec.blurHeightBelowStatusBar)
+    }
+
+    @Test
+    fun `top gradual blur spans full screen width with compact height below status bar`() {
+        composeRule.setContent {
+            ShreyTheme {
+                Box(
+                    modifier = Modifier
+                        .width(380.dp)
+                        .testTag("blur_root_container")
+                ) {
+                    com.shrey.downloader.core.design.ShreyTopGradualBlurContainer(
+                        scrollProgress = 1f
+                    ) {
+                        Box(modifier = Modifier.width(380.dp))
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        val rootBounds = composeRule.onNodeWithTag("blur_root_container").fetchSemanticsNode().boundsInRoot
+        val blurBounds = composeRule.onNodeWithTag("top_gradual_blur").fetchSemanticsNode().boundsInRoot
+        val expectedHeightPx = with(composeRule.density) { 36.dp.toPx() }
+
+        assertTrue(
+            "Expected top blur (width=${blurBounds.width}) to cover full root width (${rootBounds.width})",
+            blurBounds.width >= rootBounds.width - 1f
+        )
+        assertTrue(
+            "Expected compact top blur height (${blurBounds.height}px) near 36dp (${expectedHeightPx}px)",
+            blurBounds.height in (expectedHeightPx - 4f)..(expectedHeightPx + 4f)
+        )
+    }
+
+    @Test
+    fun `scaffold floating bottom bar never overlaps bottom home media preview controls`() {
+        val destinations = listOf(
+            ShreyNavDestination("home", "Home", Icons.Outlined.Home, Icons.Filled.Home),
+            ShreyNavDestination("downloads", "Downloads", Icons.Outlined.Download, Icons.Filled.Download),
+            ShreyNavDestination("library", "Library", Icons.Outlined.VideoLibrary, Icons.Filled.VideoLibrary),
+            ShreyNavDestination("settings", "Settings", Icons.Outlined.Settings, Icons.Filled.Settings)
+        )
+        val options = FormatSelectionMapper.buildOptions(sampleMedia, DownloadMode.VIDEO_AUDIO)
+
+        composeRule.setContent {
+            ShreyTheme {
+                Box(modifier = Modifier.width(360.dp)) {
+                    androidx.compose.material3.Scaffold(
+                        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.navigationBars,
+                        bottomBar = {
+                            ShreyGlassBottomBar(
+                                destinations = destinations,
+                                selectedId = "home",
+                                onSelect = {}
+                            )
+                        }
+                    ) { innerPadding ->
+                        HomeScreenContent(
+                            urlInput = sampleMedia.originalUrl,
+                            uiState = HomeUiState.Ready(
+                                media = sampleMedia,
+                                selectedMode = DownloadMode.VIDEO_AUDIO,
+                                selectedAudioFormat = AudioOutputFormat.ORIGINAL,
+                                selectedThumbnailFormat = ThumbnailOutputFormat.ORIGINAL,
+                                options = options,
+                                selectedOption = options.firstOrNull(),
+                                showTechnicalDetails = true
+                            ),
+                            engineState = readyEngine,
+                            onUrlChanged = {},
+                            onPasteClick = {},
+                            onClearClick = {},
+                            onAnalyzeClick = {},
+                            onRetryEngine = {},
+                            onModeSelected = {},
+                            onOptionSelected = {},
+                            onAudioFormatSelected = {},
+                            onThumbnailFormatSelected = {},
+                            onToggleTechnicalDetails = {},
+                            onStartDownload = {},
+                            onOpenDownloads = {},
+                            onOpenSettings = {},
+                            contentBottomPadding = innerPadding
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("shrey_floating_bottom_bar").assertIsDisplayed()
+        repeat(8) {
+            composeRule.onNodeWithTag("home_scroll_container").performTouchInput {
+                swipeUp(durationMillis = 120)
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("start_download_button").assertIsDisplayed()
+
+        val actionBounds = composeRule.onNodeWithTag("start_download_button").fetchSemanticsNode().boundsInRoot
+        val bottomBarBounds = composeRule.onNodeWithTag("shrey_floating_bottom_bar").fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "Expected Home primary download CTA (bottom=${actionBounds.bottom}) to sit above floating bottom bar (top=${bottomBarBounds.top})",
+            actionBounds.bottom <= bottomBarBounds.top + 1f
+        )
+    }
+
+    @Test
+    fun `settings updates card distinguishes yt-dlp update from Shrey app up-to-date status`() {
+        val engineOnlySnapshot = com.shrey.downloader.core.update.UpdateSnapshot(
+            checkState = com.shrey.downloader.core.update.UpdateCheckState.UPDATE_AVAILABLE,
+            lastCheckedAtMillis = 1_750_000_000_000L,
+            engine = com.shrey.downloader.core.update.EngineUpdateStatus(
+                installedVersion = "2026.10.26",
+                lastKnownGoodVersion = "2026.10.26",
+                installedEjsVersion = "0.8.0",
+                installedPythonVersion = "3.12.11",
+                installedQuickJsVersion = "2025-04-26",
+                availableVersion = "2026.11.20",
+                compatibilityStatus = com.shrey.downloader.core.update.EngineCompatibilityStatus.UNSIGNED_UPSTREAM_ONLY,
+                updateAvailable = true
+            ),
+            app = com.shrey.downloader.core.update.AppUpdateStatus(
+                installedVersionName = "0.0.4-dev",
+                installedVersionCode = 4L,
+                latestVersionName = "0.0.2-beta",
+                updateAvailable = false
+            )
+        )
+
+        composeRule.setContent {
+            ShreyTheme {
+                com.shrey.downloader.feature.settings.SettingsUpdatesCard(
+                    snapshot = engineOnlySnapshot,
+                    onCheckNow = {},
+                    onDownloadAppApk = {},
+                    onOpenReleasePage = {},
+                    onOpenVerifiedApk = {},
+                    onAutoCheckChanged = {},
+                    onAutoInstallEngineChanged = {},
+                    onNotifyOnUpdatesChanged = {},
+                    onChannelSelected = {}
+                )
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("updates_status_badge")
+            .assertIsDisplayed()
+        composeRule.onAllNodesWithText("yt-dlp update available").assertCountEquals(2)
+        composeRule.onAllNodesWithText("Shrey app update available").assertCountEquals(0)
+    }
+
+    @Test
+    fun `ambiguous url choice card prompts video vs playlist without auto-downloading`() {
+        var choseVideo = false
+        var chosePlaylist = false
+        val classified = com.shrey.downloader.core.validation.MediaUrlClassifier.classify(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL1234567890abcdef"
+        )
+
+        composeRule.setContent {
+            ShreyTheme {
+                HomeScreenContent(
+                    urlInput = classified.normalizedUrl,
+                    uiState = HomeUiState.AmbiguousUrl(classified),
+                    engineState = readyEngine,
+                    onUrlChanged = {},
+                    onPasteClick = {},
+                    onClearClick = {},
+                    onAnalyzeClick = {},
+                    onRetryEngine = {},
+                    onModeSelected = {},
+                    onOptionSelected = {},
+                    onAudioFormatSelected = {},
+                    onThumbnailFormatSelected = {},
+                    onToggleTechnicalDetails = {},
+                    onStartDownload = {},
+                    onOpenDownloads = {},
+                    onOpenSettings = {},
+                    contentBottomPadding = PaddingValues(bottom = 124.dp),
+                    onChooseAmbiguousVideo = { choseVideo = true },
+                    onChooseAmbiguousPlaylist = { chosePlaylist = true }
+                )
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("ambiguous_url_card").assertIsDisplayed()
+        composeRule.onNodeWithTag("ambiguous_choose_video_button").performScrollTo().performClick()
+        composeRule.onNodeWithTag("ambiguous_choose_playlist_button").performScrollTo().performClick()
+        assertTrue(choseVideo)
+        assertTrue(chosePlaylist)
+    }
+
+    @Test
+    fun `playlist preview renders selection controls quality presets and starts batch download`() {
+        var started = false
+        var toggledId: String? = null
+        val preview = com.shrey.downloader.domain.model.CollectionPreview(
+            sourceType = com.shrey.downloader.domain.model.MediaSourceType.PLAYLIST,
+            sourceUrl = "https://www.youtube.com/playlist?list=PLui12345678",
+            canonicalId = "PLui12345678",
+            title = "Kotlin Architecture Series",
+            creator = "Android Lab",
+            thumbnailUrl = null,
+            declaredTotalCount = 3,
+            entries = listOf(
+                com.shrey.downloader.domain.model.CollectionEntry("v1", 1, "Episode 1", "https://www.youtube.com/watch?v=v1", 420L),
+                com.shrey.downloader.domain.model.CollectionEntry("v2", 2, "Episode 2", "https://www.youtube.com/watch?v=v2", 510L),
+                com.shrey.downloader.domain.model.CollectionEntry(
+                    "v3", 3, "[Private video]", "https://www.youtube.com/watch?v=v3", null,
+                    availability = com.shrey.downloader.domain.model.EntryAvailability.PRIVATE_OR_MEMBERS
+                )
+            ),
+            hasMoreEntries = false,
+            nextStartIndex = 4
+        )
+
+        composeRule.setContent {
+            ShreyTheme {
+                HomeScreenContent(
+                    urlInput = preview.sourceUrl,
+                    uiState = HomeUiState.PlaylistReady(
+                        preview = preview,
+                        selectedMediaIds = setOf("v1", "v2"),
+                        qualityPreset = com.shrey.downloader.domain.model.BulkQualityPreset.P1080,
+                        audioOutputFormat = AudioOutputFormat.M4A,
+                        wifiOnly = true,
+                        availableStorageBytes = 8_000_000_000L
+                    ),
+                    engineState = readyEngine,
+                    onUrlChanged = {},
+                    onPasteClick = {},
+                    onClearClick = {},
+                    onAnalyzeClick = {},
+                    onRetryEngine = {},
+                    onModeSelected = {},
+                    onOptionSelected = {},
+                    onAudioFormatSelected = {},
+                    onThumbnailFormatSelected = {},
+                    onToggleTechnicalDetails = {},
+                    onStartDownload = {},
+                    onOpenDownloads = {},
+                    onOpenSettings = {},
+                    contentBottomPadding = PaddingValues(bottom = 124.dp),
+                    onTogglePlaylistEntry = { toggledId = it },
+                    onStartPlaylistBatch = { started = true }
+                )
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("playlist_preview_title").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("playlist_entry_v1").performScrollTo().performClick()
+        assertEquals("v1", toggledId)
+        composeRule.onNodeWithTag("start_playlist_download_button").performScrollTo().performClick()
+        assertTrue(started)
+    }
+
+    @Test
+    fun `channel preview requires explicit confirmation dialog before starting bulk download`() {
+        var confirmed = false
+        val classified = com.shrey.downloader.core.validation.MediaUrlClassifier.classify("https://www.youtube.com/@ChannelDemo")
+        val preview = com.shrey.downloader.domain.model.CollectionPreview(
+            sourceType = com.shrey.downloader.domain.model.MediaSourceType.CHANNEL,
+            sourceUrl = "https://www.youtube.com/@ChannelDemo",
+            canonicalId = "@ChannelDemo",
+            title = "Channel Demo",
+            creator = "Channel Demo",
+            thumbnailUrl = null,
+            declaredTotalCount = 12,
+            entries = listOf(
+                com.shrey.downloader.domain.model.CollectionEntry("c1", 1, "Video 1", "https://www.youtube.com/watch?v=c1", 300L),
+                com.shrey.downloader.domain.model.CollectionEntry("c2", 2, "Video 2", "https://www.youtube.com/watch?v=c2", 400L)
+            ),
+            hasMoreEntries = true,
+            nextStartIndex = 51
+        )
+
+        composeRule.setContent {
+            var showDialog by remember { mutableStateOf(false) }
+            ShreyTheme {
+                HomeScreenContent(
+                    urlInput = preview.sourceUrl,
+                    uiState = HomeUiState.ChannelReady(
+                        classified = classified,
+                        preview = preview,
+                        selectedTabs = setOf(com.shrey.downloader.domain.model.ChannelContentTab.VIDEOS),
+                        scopePreset = com.shrey.downloader.domain.model.ChannelScopePreset.LATEST_10,
+                        qualityPreset = com.shrey.downloader.domain.model.BulkQualityPreset.P720,
+                        audioOutputFormat = AudioOutputFormat.M4A,
+                        wifiOnly = true,
+                        availableStorageBytes = 12_000_000_000L,
+                        showConfirmDialog = showDialog
+                    ),
+                    engineState = readyEngine,
+                    onUrlChanged = {},
+                    onPasteClick = {},
+                    onClearClick = {},
+                    onAnalyzeClick = {},
+                    onRetryEngine = {},
+                    onModeSelected = {},
+                    onOptionSelected = {},
+                    onAudioFormatSelected = {},
+                    onThumbnailFormatSelected = {},
+                    onToggleTechnicalDetails = {},
+                    onStartDownload = {},
+                    onOpenDownloads = {},
+                    onOpenSettings = {},
+                    contentBottomPadding = PaddingValues(bottom = 124.dp),
+                    onRequestChannelConfirm = { showDialog = true },
+                    onDismissChannelConfirm = { showDialog = false },
+                    onConfirmChannelBatch = {
+                        showDialog = false
+                        confirmed = true
+                    }
+                )
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("channel_preview_title").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("channel_review_download_button").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Confirm Channel Bulk Download").assertIsDisplayed()
+        composeRule.onNodeWithTag("channel_confirm_start_button").performClick()
+        assertTrue(confirmed)
+    }
+
+    @Test
+    fun `downloads batch card shows overall progress bytes counter and expands individual items`() {
+        var paused = false
+        val batch = com.shrey.downloader.domain.model.DownloadBatch(
+            batchId = "batch_1",
+            sourceUrl = "https://www.youtube.com/playlist?list=PLbatch12345",
+            canonicalId = "PLbatch12345",
+            sourceType = com.shrey.downloader.domain.model.MediaSourceType.PLAYLIST,
+            displayName = "Design Talks Playlist",
+            creator = "Design Conf",
+            thumbnailUrl = null,
+            status = com.shrey.downloader.domain.model.BatchStatus.ACTIVE,
+            qualityPreset = com.shrey.downloader.domain.model.BulkQualityPreset.P1080,
+            downloadMode = DownloadMode.VIDEO_AUDIO,
+            audioOutputFormat = AudioOutputFormat.M4A,
+            wifiOnly = true,
+            discoveredCount = 5,
+            selectedCount = 5,
+            completedCount = 2,
+            failedCount = 1,
+            skippedCount = 0,
+            activeCount = 1,
+            totalBytesDownloaded = 94_000_000L,
+            checkpointNextIndex = 6,
+            createdAt = 1_700_000_000_000L,
+            updatedAt = 1_700_000_100_000L
+        )
+        val items = listOf(
+            com.shrey.downloader.domain.model.BatchItem(
+                itemId = "bi_1", batchId = "batch_1", downloadId = "d1", mediaId = "v1", position = 1,
+                title = "Talk One", sourceUrl = "https://www.youtube.com/watch?v=v1", thumbnailUrl = null,
+                durationSeconds = 300L, tab = null, status = com.shrey.downloader.domain.model.BatchItemStatus.COMPLETED,
+                progressPercent = 100f, downloadedBytes = 47_000_000L, totalBytes = 47_000_000L,
+                speedText = null, etaSeconds = null, destinationUri = "content://media/1",
+                outputDisplayName = "Talk One.mp4", mimeType = "video/mp4", errorMessage = null,
+                technicalError = null, retryCount = 0, updatedAt = 1_700_000_050_000L
+            ),
+            com.shrey.downloader.domain.model.BatchItem(
+                itemId = "bi_2", batchId = "batch_1", downloadId = "d2", mediaId = "v2", position = 2,
+                title = "Talk Two", sourceUrl = "https://www.youtube.com/watch?v=v2", thumbnailUrl = null,
+                durationSeconds = 360L, tab = null, status = com.shrey.downloader.domain.model.BatchItemStatus.ACTIVE,
+                progressPercent = 54f, downloadedBytes = 25_000_000L, totalBytes = 47_000_000L,
+                speedText = "4.2 MiB/s", etaSeconds = 6L, destinationUri = null,
+                outputDisplayName = null, mimeType = null, errorMessage = null,
+                technicalError = null, retryCount = 0, updatedAt = 1_700_000_080_000L
+            )
+        )
+
+        composeRule.setContent {
+            ShreyTheme {
+                DownloadsScreenContent(
+                    state = DownloadsUiState(
+                        batches = listOf(com.shrey.downloader.domain.model.BatchWithItems(batch, items))
+                    ),
+                    onCancel = {},
+                    onRetry = {},
+                    onRemoveHistory = {},
+                    onDeleteFile = {},
+                    onOpenFile = {},
+                    onShareFile = {},
+                    contentBottomPadding = PaddingValues(bottom = 124.dp),
+                    onPauseBatch = { paused = true }
+                )
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("batch_card_batch_1").assertIsDisplayed()
+        composeRule.onNodeWithTag("batch_progress_label_batch_1").assertIsDisplayed()
+        composeRule.onNodeWithTag("batch_bytes_batch_1").assertIsDisplayed()
+        composeRule.onNodeWithTag("batch_item_bi_1").assertIsDisplayed()
+        composeRule.onNodeWithTag("batch_item_bi_2").assertIsDisplayed()
+        composeRule.onNodeWithTag("batch_pause_batch_1").performClick()
+        assertTrue(paused)
+    }
 }
+
 

@@ -687,6 +687,20 @@ data class ShreyNavDestination(
     val badgeCount: Int = 0
 )
 
+object ShreyBottomBarDefaults {
+    /**
+     * Conservative minimum height of the floating pill bottom bar itself (excluding system
+     * gesture / 3-button navigation bar insets): 6dp top + 10dp bottom + 10dp surface pad + 54dp tab.
+     */
+    val MinBarHeight = 80.dp
+
+    /**
+     * Breathing room below the final scrollable item so cards, elevation shadows, and primary
+     * actions clear the floating glass bottom navigation bar comfortably.
+     */
+    val ExtraScrollClearance = 24.dp
+}
+
 @Composable
 fun ShreyGlassBottomBar(
     destinations: List<ShreyNavDestination>,

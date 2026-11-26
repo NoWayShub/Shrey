@@ -60,6 +60,7 @@ fun AboutScreen(
 
     ShreyTopGradualBlurContainer(
         scrollProgress = topBlurProgress,
+        scrollOffsetProvider = { scroll.value },
         modifier = modifier
     ) {
         Column(
@@ -196,6 +197,7 @@ fun LicensesScreen(
 
     ShreyTopGradualBlurContainer(
         scrollProgress = topBlurProgress,
+        scrollOffsetProvider = { scroll.value },
         modifier = modifier
     ) {
         Column(

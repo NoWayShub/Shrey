@@ -125,11 +125,13 @@ class YtDlpDownloadEngine(
         }
 
         val outputTemplate = File(workDir, "media_output.%(ext)s").absolutePath
+        val cacheDir = engineCoordinator.getYtDlpCacheDir()
         val ytRequest = YoutubeDLRequest(validatedUrl).apply {
             addOption("-f", request.formatSelector)
             addOption("--no-playlist")
             addOption("--no-exec")
             addOption("--no-mtime")
+            addOption("--cache-dir", cacheDir.absolutePath)
             addOption("--socket-timeout", "30")
             addOption("--retries", "3")
             addOption("--fragment-retries", "3")
@@ -243,7 +245,8 @@ class YtDlpDownloadEngine(
                 desiredTitle = request.mediaTitle,
                 extension = actualExtension,
                 mode = request.mode,
-                customTreeUriString = request.destinationTreeUri
+                customTreeUriString = request.destinationTreeUri,
+                relativeSubfolder = request.relativeSubfolder
             )
         } catch (t: Throwable) {
             return DownloadResult.Failure(translateStorageFailure(t))

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.4-beta] - 2026-11-26
+
+### Added
+- **Playlist & YouTube Channel Bulk Downloads:**
+  - Added `MediaUrlClassifier` for canonical URI classification across single videos, playlists, YouTube channels (`Videos`, `Shorts`, and `Completed Streams` tabs), ambiguous video+playlist links, and generic sites.
+  - Added `YtDlpCollectionExtractor` for paginated, low-memory `--flat-playlist` metadata discovery (50 entries per chunk).
+  - Added `BatchDownloadCoordinator` orchestrating playlist and channel bulk queues atop `DownloadQueueManager` with a single active global download (`concurrency = 1`), deduplication across batches and standalone downloads, independent discovery vs. download cancellation, pause/resume, and restart recovery.
+  - Added `BulkQualityPreset` (Best, 2160p 4K, 1440p, 1080p, 720p, 480p, 360p, Audio Only) and `ChannelScopePreset` (Latest 10, 50, 100, Custom, All discoverable) with MediaStore/SAF relative subfolder support.
+  - Added Room database v3 migration (`DownloadBatchEntity`, `BatchItemEntity`, `ChannelDiscoveryCheckpointEntity`) for persistent per-tab channel discovery checkpoints.
+  - Added `CollectionPreviewCards` and `BatchDownloadCards` Liquid Glass UI components on Home and Downloads screens.
+- **Update Checker & Version Comparison Improvements:** Enhanced `UpdateVersionComparator` to strictly honor numeric SemVer + `versionCode` precedence when comparing prerelease and release builds.
+- **Expanded Automated Testing:** Added unit and Robolectric test suites for URL classification (`MediaUrlClassifierTest`), channel auto-discovery (`ChannelAutoDiscoveryTest`), collection/batch workflows (`CollectionAndBatchWorkflowTest`), and v0.0.4 update checks (`UpdateCheckerV004Test`).
+
+---
+
 ## [0.0.3-beta] - 2026-11-25
 
 ### Added

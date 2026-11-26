@@ -18,6 +18,15 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads WHERE status = 'QUEUED' ORDER BY createdAt ASC LIMIT 1")
     suspend fun getNextQueued(): DownloadEntity?
 
+    @Query(
+        """
+        SELECT COUNT(*) FROM downloads
+        WHERE batchId IS NULL
+          AND status IN ('QUEUED', 'PREPARING', 'EXTRACTING', 'DOWNLOADING', 'MERGING', 'CONVERTING', 'SAVING')
+        """
+    )
+    suspend fun countActiveOrQueuedStandalone(): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: DownloadEntity)
 

@@ -70,4 +70,21 @@ object FilenameSanitizer {
         }
         return "${stem}_${System.currentTimeMillis()}$ext"
     }
+
+    /**
+     * Sanitizes relative subfolder path segments (e.g. `listOf("Playlists", playlistTitle)`)
+     * to prevent path traversal (`..`, leading slashes, reserved names, or control characters).
+     */
+    fun sanitizeSubfolderSegments(rawSubfolder: String?): List<String> {
+        if (rawSubfolder.isNullOrBlank()) return emptyList()
+        return rawSubfolder
+            .replace('\\', '/')
+            .split('/')
+            .map { it.trim() }
+            .filter { it.isNotBlank() && it != "." && it != ".." }
+            .map { segment ->
+                sanitizeBaseName(segment, fallback = "Collection").take(64)
+            }
+            .filter { it.isNotBlank() }
+    }
 }

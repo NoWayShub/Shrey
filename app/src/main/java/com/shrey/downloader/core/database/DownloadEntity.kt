@@ -34,5 +34,8 @@ data class DownloadEntity(
     val completedAt: Long?,
     val lastError: String?,
     val technicalError: String?,
-    val retryCount: Int
+    val retryCount: Int,
+    val batchId: String? = null,
+    val mediaId: String? = null,
+    val relativeSubfolder: String? = null
 )

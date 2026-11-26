@@ -40,7 +40,10 @@ object DownloadMapper {
         completedAt = null,
         lastError = null,
         technicalError = null,
-        retryCount = 0
+        retryCount = 0,
+        batchId = request.batchId,
+        mediaId = request.mediaId,
+        relativeSubfolder = request.relativeSubfolder
     )
 
     fun toDomain(entity: DownloadEntity): DownloadItem = DownloadItem(
@@ -77,7 +80,10 @@ object DownloadMapper {
         completedAt = entity.completedAt,
         lastError = entity.lastError,
         technicalError = entity.technicalError,
-        retryCount = entity.retryCount
+        retryCount = entity.retryCount,
+        batchId = entity.batchId,
+        mediaId = entity.mediaId,
+        relativeSubfolder = entity.relativeSubfolder
     )
 
     fun toRequest(item: DownloadItem): DownloadRequest = DownloadRequest(
@@ -95,6 +101,9 @@ object DownloadMapper {
         thumbnailOutputFormat = item.thumbnailOutputFormat,
         requiresMerge = item.requiresMerge,
         destinationTreeUri = item.destinationTreeUri,
-        createdAtMillis = item.createdAt
+        createdAtMillis = item.createdAt,
+        batchId = item.batchId,
+        mediaId = item.mediaId,
+        relativeSubfolder = item.relativeSubfolder
     )
 }

@@ -65,7 +65,10 @@ data class GitHubReleaseInfo(
     val htmlUrl: String,
     val isPrerelease: Boolean,
     val publishedAt: String?,
-    val assets: List<GitHubReleaseAsset>
+    val assets: List<GitHubReleaseAsset>,
+    val isDraft: Boolean = false,
+    val versionCode: Long? = null,
+    val minSdkVersion: Int? = null
 )
 
 data class GitHubReleaseAsset(
@@ -73,6 +76,12 @@ data class GitHubReleaseAsset(
     val downloadUrl: String,
     val sizeBytes: Long,
     val contentType: String? = null
+)
+
+data class ConditionalReleasesResponse(
+    val releases: List<GitHubReleaseInfo>,
+    val etag: String? = null,
+    val notModified: Boolean = false
 )
 
 data class EngineUpdateStatus(
@@ -102,7 +111,10 @@ data class AppUpdateStatus(
     val installedVersionName: String,
     val installedVersionCode: Long,
     val latestVersionName: String? = null,
+    val latestVersionCode: Long? = null,
     val latestTagName: String? = null,
+    val latestReleaseTitle: String? = null,
+    val latestPublishedAt: String? = null,
     val isPrerelease: Boolean = false,
     val updateAvailable: Boolean = false,
     val releaseNotes: String? = null,
@@ -129,5 +141,23 @@ data class UpdateSnapshot(
         "Automatic runtime yt-dlp installation stays disabled unless a maintainer-signed manifest is configured and verified. Native FFmpeg updates ship only inside signed Shrey APK releases."
 ) {
     val hasAnyUpdateAvailable: Boolean
-        get() = app.updateAvailable || engine.updateAvailable || ffmpeg.availableViaAppUpdate
+        get() = checkState != UpdateCheckState.FAILED &&
+            (app.updateAvailable || engine.updateAvailable || ffmpeg.availableViaAppUpdate)
+
+    val statusBadgeLabel: String
+        get() = when (checkState) {
+            UpdateCheckState.IDLE -> "Not checked yet"
+            UpdateCheckState.CHECKING -> "Checking…"
+            UpdateCheckState.FAILED -> "Check failed"
+            UpdateCheckState.UP_TO_DATE -> "Up to date"
+            UpdateCheckState.UPDATE_AVAILABLE -> when {
+                app.updateAvailable && engine.updateAvailable -> "Shrey & yt-dlp updates"
+                app.updateAvailable -> "Shrey app update available"
+                engine.updateAvailable -> "yt-dlp update available"
+                else -> "Up to date"
+            }
+        }
+
+    val lastError: String?
+        get() = lastErrorMessage
 }

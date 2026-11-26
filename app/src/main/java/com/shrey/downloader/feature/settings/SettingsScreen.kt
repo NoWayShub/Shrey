@@ -77,6 +77,7 @@ import com.shrey.downloader.domain.model.GlassEffectMode
 import com.shrey.downloader.domain.model.ShreySettings
 import com.shrey.downloader.domain.model.ThemeMode
 import com.shrey.downloader.navigation.LocalShreyBottomBarPadding
+import com.shrey.downloader.navigation.rememberShreyBottomScrollClearance
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -200,6 +201,7 @@ fun SettingsScreenContent(
     val haptics = rememberShreyHaptics()
     val density = LocalDensity.current
     val statusBarTop = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
+    val bottomScrollClearance = rememberShreyBottomScrollClearance(contentBottomPadding)
     val scrollState = rememberScrollState()
     val topBlurProgress by remember {
         derivedStateOf { (scrollState.value / 72f).coerceIn(0f, 1f) }
@@ -208,6 +210,7 @@ fun SettingsScreenContent(
 
     ShreyTopGradualBlurContainer(
         scrollProgress = topBlurProgress,
+        scrollOffsetProvider = { scrollState.value },
         modifier = modifier
     ) {
         Column(
@@ -215,11 +218,7 @@ fun SettingsScreenContent(
                 .fillMaxSize()
                 .widthIn(max = 640.dp)
                 .verticalScroll(scrollState)
-                .padding(horizontal = 18.dp)
-                .padding(
-                    top = statusBarTop + 16.dp,
-                    bottom = contentBottomPadding.calculateBottomPadding() + 12.dp
-                )
+                .padding(start = 18.dp, end = 18.dp, top = statusBarTop + 16.dp)
                 .testTag("settings_scroll_container"),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -485,6 +484,12 @@ fun SettingsScreenContent(
                     testTag = "settings_about_row"
                 )
             }
+
+            Spacer(
+                modifier = Modifier
+                    .height(bottomScrollClearance)
+                    .testTag("settings_bottom_scroll_spacer")
+            )
         }
     }
 }

@@ -21,6 +21,11 @@ class ShreyApplication : Application() {
         container.notificationManager.ensureChannel()
         container.downloadQueueManager.initializeOnAppStart()
 
+        // Reconcile any interrupted bulk downloads safely after OS process kill
+        appScope.launch {
+            runCatching { container.batchCoordinator.reconcileOnAppStart() }
+        }
+
         // Warm up yt-dlp / FFmpeg engine off the main thread so first Analyze is snappy
         appScope.launch {
             container.engineCoordinator.ensureInitialized()

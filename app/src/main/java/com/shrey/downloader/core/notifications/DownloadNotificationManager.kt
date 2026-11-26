@@ -191,7 +191,8 @@ class DownloadNotificationManager(private val context: Context) {
 
     fun showUpdateAvailableNotification(
         summary: String,
-        notificationsEnabled: Boolean
+        notificationsEnabled: Boolean,
+        title: String? = null
     ) {
         if (!notificationsEnabled || !hasNotificationPermission()) return
         ensureChannel()
@@ -203,9 +204,11 @@ class DownloadNotificationManager(private val context: Context) {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val effectiveTitle = title?.takeIf { it.isNotBlank() }
+            ?: context.getString(R.string.notification_update_available_title)
         val notification = NotificationCompat.Builder(context, UPDATES_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle(context.getString(R.string.notification_update_available_title))
+            .setContentTitle(effectiveTitle)
             .setContentText(summary)
             .setStyle(NotificationCompat.BigTextStyle().bigText(summary))
             .setAutoCancel(true)

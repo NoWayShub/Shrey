@@ -27,6 +27,9 @@ class RoomDownloadRepository(
     suspend fun getNextQueued(): DownloadRequest? =
         dao.getNextQueued()?.let(DownloadMapper::toDomain)?.let(DownloadMapper::toRequest)
 
+    suspend fun countActiveOrQueuedStandalone(): Int =
+        dao.countActiveOrQueuedStandalone()
+
     override suspend fun updateProgress(progress: DownloadProgress) {
         dao.updateProgress(
             id = progress.downloadId,

@@ -35,6 +35,19 @@ data class ActiveTransferState(
     val progress: DownloadProgress
 )
 
+interface DownloadLifecycleListener {
+    fun onDownloadProgress(progress: DownloadProgress)
+    fun onDownloadCompleted(
+        downloadId: String,
+        destinationUri: String,
+        displayName: String,
+        mimeType: String,
+        fileSizeBytes: Long
+    )
+    fun onDownloadFailed(downloadId: String, error: ShreyError)
+    fun onDownloadCancelled(downloadId: String)
+}
+
 class DownloadQueueManager(
     private val context: Context,
     private val repository: RoomDownloadRepository,
@@ -51,11 +64,22 @@ class DownloadQueueManager(
     private var activeDownloadId: String? = null
     @Volatile
     private var activeJob: Job? = null
+    @Volatile
+    private var lifecycleListener: DownloadLifecycleListener? = null
 
     private val _activeTransfer = MutableStateFlow<ActiveTransferState?>(null)
     val activeTransfer: StateFlow<ActiveTransferState?> = _activeTransfer.asStateFlow()
 
     val downloadsFlow: Flow<List<DownloadItem>> = repository.observeDownloads()
+
+    fun setLifecycleListener(listener: DownloadLifecycleListener?) {
+        lifecycleListener = listener
+    }
+
+    fun isTransferActive(): Boolean = activeDownloadId != null
+
+    suspend fun hasActiveOrPendingStandaloneDownload(): Boolean =
+        repository.countActiveOrQueuedStandalone() > 0
 
     fun initializeOnAppStart() {
         scope.launch {
@@ -87,6 +111,7 @@ class DownloadQueueManager(
             activeJob?.cancel()
         }
         repository.markCancelled(downloadId)
+        lifecycleListener?.onDownloadCancelled(downloadId)
     }
 
     suspend fun removeFromHistory(downloadId: String) {
@@ -151,6 +176,7 @@ class DownloadQueueManager(
                 userError = networkCheckError.userMessage,
                 technicalError = networkCheckError.technicalDetails
             )
+            lifecycleListener?.onDownloadFailed(request.downloadId, networkCheckError)
             notificationManager.showFailedNotification(
                 downloadId = request.downloadId,
                 title = request.mediaTitle,
@@ -179,6 +205,7 @@ class DownloadQueueManager(
                     scope.launch {
                         repository.updateProgress(progress)
                     }
+                    lifecycleListener?.onDownloadProgress(progress)
                     notificationManager.updateActiveNotification(
                         downloadId = request.downloadId,
                         title = request.mediaTitle,
@@ -197,6 +224,13 @@ class DownloadQueueManager(
                         mimeType = result.mimeType,
                         fileSizeBytes = result.fileSizeBytes
                     )
+                    lifecycleListener?.onDownloadCompleted(
+                        downloadId = request.downloadId,
+                        destinationUri = result.destinationUri,
+                        displayName = result.displayName,
+                        mimeType = result.mimeType,
+                        fileSizeBytes = result.fileSizeBytes
+                    )
                     notificationManager.showCompletedNotification(
                         downloadId = request.downloadId,
                         title = request.mediaTitle,
@@ -205,6 +239,7 @@ class DownloadQueueManager(
                 }
                 DownloadResult.Cancelled -> {
                     repository.markCancelled(request.downloadId)
+                    lifecycleListener?.onDownloadCancelled(request.downloadId)
                 }
                 is DownloadResult.Failure -> {
                     repository.markFailed(
@@ -212,6 +247,7 @@ class DownloadQueueManager(
                         userError = result.error.userMessage,
                         technicalError = result.error.technicalDetails
                     )
+                    lifecycleListener?.onDownloadFailed(request.downloadId, result.error)
                     notificationManager.showFailedNotification(
                         downloadId = request.downloadId,
                         title = request.mediaTitle,

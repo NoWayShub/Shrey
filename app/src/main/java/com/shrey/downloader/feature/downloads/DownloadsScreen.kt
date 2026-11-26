@@ -62,9 +62,11 @@ import com.shrey.downloader.core.design.ShreyProgressBar
 import com.shrey.downloader.core.design.ShreyThemeTokens
 import com.shrey.downloader.core.design.ShreyTopGradualBlurContainer
 import com.shrey.downloader.core.utilities.Formatters
+import com.shrey.downloader.domain.model.BatchItem
 import com.shrey.downloader.domain.model.DownloadItem
 import com.shrey.downloader.domain.model.DownloadStage
 import com.shrey.downloader.navigation.LocalShreyBottomBarPadding
+import com.shrey.downloader.navigation.rememberShreyBottomScrollClearance
 import kotlin.math.roundToInt
 
 @Composable
@@ -108,6 +110,38 @@ fun DownloadsScreen(
             }
         },
         contentBottomPadding = effectiveBottomPadding,
+        onPauseBatch = viewModel::pauseBatch,
+        onResumeBatch = viewModel::resumeBatch,
+        onStopBatchDiscovery = viewModel::stopBatchDiscovery,
+        onCancelBatch = viewModel::cancelBatch,
+        onRetryFailedBatch = viewModel::retryFailedBatchItems,
+        onRemoveBatch = viewModel::removeBatch,
+        onCancelBatchItem = viewModel::cancelBatchItem,
+        onRetryBatchItem = viewModel::retryBatchItem,
+        onOpenBatchItem = { item ->
+            val uri = item.destinationUri
+            if (uri.isNullOrBlank()) {
+                Toast.makeText(context, "File URI unavailable", Toast.LENGTH_SHORT).show()
+            } else {
+                runCatching {
+                    context.startActivity(viewModel.storagePublisher.buildOpenIntent(uri, item.mimeType))
+                }.onFailure {
+                    Toast.makeText(context, "No installed app can open this file", Toast.LENGTH_SHORT).show()
+                }
+            }
+        },
+        onShareBatchItem = { item ->
+            val uri = item.destinationUri
+            if (!uri.isNullOrBlank()) {
+                runCatching {
+                    context.startActivity(
+                        viewModel.storagePublisher.buildShareIntent(uri, item.mimeType, item.title)
+                    )
+                }.onFailure {
+                    Toast.makeText(context, "Unable to share this file", Toast.LENGTH_SHORT).show()
+                }
+            }
+        },
         modifier = modifier
     )
 }
@@ -122,7 +156,17 @@ fun DownloadsScreenContent(
     onOpenFile: (DownloadItem) -> Unit,
     onShareFile: (DownloadItem) -> Unit,
     contentBottomPadding: PaddingValues,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onPauseBatch: (String) -> Unit = {},
+    onResumeBatch: (String) -> Unit = {},
+    onStopBatchDiscovery: (String) -> Unit = {},
+    onCancelBatch: (String) -> Unit = {},
+    onRetryFailedBatch: (String) -> Unit = {},
+    onRemoveBatch: (String) -> Unit = {},
+    onCancelBatchItem: (String, String) -> Unit = { _, _ -> },
+    onRetryBatchItem: (String, String) -> Unit = { _, _ -> },
+    onOpenBatchItem: (BatchItem) -> Unit = {},
+    onShareBatchItem: (BatchItem) -> Unit = {}
 ) {
     val palette = ShreyThemeTokens.palette
     val density = LocalDensity.current
@@ -139,6 +183,7 @@ fun DownloadsScreenContent(
 
     ShreyTopGradualBlurContainer(
         scrollProgress = topBlurProgress,
+        scrollOffsetProvider = { listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset },
         modifier = modifier
     ) {
         LazyColumn(
@@ -151,7 +196,7 @@ fun DownloadsScreenContent(
                 start = 20.dp,
                 end = 20.dp,
                 top = statusBarTop + 16.dp,
-                bottom = contentBottomPadding.calculateBottomPadding() + 12.dp
+                bottom = rememberShreyBottomScrollClearance(contentBottomPadding)
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -180,11 +225,31 @@ fun DownloadsScreenContent(
                     ShreyEmptyState(
                         icon = Icons.Outlined.Download,
                         title = "No downloads yet",
-                        body = "Analyze a media link on Home and choose Download to see live progress, speeds, and history here.",
+                        body = "Analyze a video, playlist, or channel link on Home and choose Download to see live progress, batch queues, and history here.",
                         modifier = Modifier.testTag("downloads_empty_state")
                     )
                 }
             } else {
+                if (state.batches.isNotEmpty()) {
+                    item { SectionLabel("Playlists & Channels") }
+                    items(state.batches, key = { it.batch.batchId }) { batchWithItems ->
+                        val batchId = batchWithItems.batch.batchId
+                        BatchDownloadCard(
+                            batchWithItems = batchWithItems,
+                            onPauseBatch = { onPauseBatch(batchId) },
+                            onResumeBatch = { onResumeBatch(batchId) },
+                            onStopDiscovery = { onStopBatchDiscovery(batchId) },
+                            onCancelBatch = { onCancelBatch(batchId) },
+                            onRetryFailed = { onRetryFailedBatch(batchId) },
+                            onRemoveBatch = { onRemoveBatch(batchId) },
+                            onCancelItem = { itemId -> onCancelBatchItem(batchId, itemId) },
+                            onRetryItem = { itemId -> onRetryBatchItem(batchId, itemId) },
+                            onOpenItem = onOpenBatchItem,
+                            onShareItem = onShareBatchItem
+                        )
+                    }
+                }
+
                 if (state.active.isNotEmpty()) {
                     item { SectionLabel("Active") }
                     items(state.active, key = { it.id }) { item ->

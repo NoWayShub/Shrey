@@ -1,18 +1,36 @@
 package com.shrey.downloader.core.update
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
+
+class GitHubRateLimitException(
+    message: String,
+    val resetEpochSeconds: Long? = null
+) : IOException(message)
+
+class GitHubOfflineException(message: String) : IOException(message)
 
 interface ReleaseMetadataSource {
     suspend fun fetchLatestYtDlpRelease(): Result<GitHubReleaseInfo>
     suspend fun fetchShreyReleases(): Result<List<GitHubReleaseInfo>>
+
+    suspend fun fetchShreyReleasesConditional(ifNoneMatch: String?): Result<ConditionalReleasesResponse> {
+        return fetchShreyReleases().map { releases ->
+            ConditionalReleasesResponse(releases = releases, etag = null, notModified = false)
+        }
+    }
+
     suspend fun downloadFile(
         url: String,
         allowedHosts: Set<String>,
@@ -22,10 +40,12 @@ interface ReleaseMetadataSource {
 }
 
 class OkHttpReleaseMetadataSource(
-    private val userAgent: String = "Shrey-Android-Updater",
+    private val userAgent: String = "Shrey-Android-Updater/0.0.4",
+    private val shreyReleasesApiUrl: String = UpdateTrustConfig.SHREY_RELEASES_API_URL,
+    private val ytDlpLatestApiUrl: String = UpdateTrustConfig.YTDLP_LATEST_RELEASE_API_URL,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
@@ -33,22 +53,39 @@ class OkHttpReleaseMetadataSource(
 
     override suspend fun fetchLatestYtDlpRelease(): Result<GitHubReleaseInfo> = withContext(Dispatchers.IO) {
         runCatching {
-            val body = fetchJson(UpdateTrustConfig.YTDLP_LATEST_RELEASE_API_URL)
-            parseReleaseObject(JSONObject(body))
+            val result = executeJsonRequestWithRetry(ytDlpLatestApiUrl, ifNoneMatch = null)
+            parseReleaseObject(JSONObject(result.body.orEmpty()))
         }
     }
 
-    override suspend fun fetchShreyReleases(): Result<List<GitHubReleaseInfo>> = withContext(Dispatchers.IO) {
+    override suspend fun fetchShreyReleases(): Result<List<GitHubReleaseInfo>> =
+        fetchShreyReleasesConditional(ifNoneMatch = null).map { it.releases }
+
+    override suspend fun fetchShreyReleasesConditional(
+        ifNoneMatch: String?
+    ): Result<ConditionalReleasesResponse> = withContext(Dispatchers.IO) {
         runCatching {
-            val body = fetchJson(UpdateTrustConfig.SHREY_RELEASES_API_URL)
-            val array = JSONArray(body)
-            buildList {
+            val result = executeJsonRequestWithRetry(shreyReleasesApiUrl, ifNoneMatch = ifNoneMatch)
+            if (result.notModified) {
+                return@runCatching ConditionalReleasesResponse(
+                    releases = emptyList(),
+                    etag = result.etag ?: ifNoneMatch,
+                    notModified = true
+                )
+            }
+            val array = JSONArray(result.body.orEmpty())
+            val releases = buildList {
                 for (i in 0 until array.length()) {
                     val obj = array.optJSONObject(i) ?: continue
                     if (obj.optBoolean("draft", false)) continue
                     add(parseReleaseObject(obj))
                 }
             }
+            ConditionalReleasesResponse(
+                releases = releases,
+                etag = result.etag,
+                notModified = false
+            )
         }
     }
 
@@ -70,7 +107,7 @@ class OkHttpReleaseMetadataSource(
 
             client.newCall(req).execute().use { response ->
                 if (!response.isSuccessful) {
-                    throw IOException("HTTP Error ${response.code}: ${response.message}")
+                    throw translateHttpError(response)
                 }
                 // Verify final redirected host is also allowlisted and HTTPS
                 val finalUrl = response.request.url.toString()
@@ -102,19 +139,83 @@ class OkHttpReleaseMetadataSource(
         }
     }
 
-    private fun fetchJson(url: String): String {
-        val request = Request.Builder()
+    private data class JsonFetchResult(
+        val body: String?,
+        val etag: String?,
+        val notModified: Boolean
+    )
+
+    private suspend fun executeJsonRequestWithRetry(
+        url: String,
+        ifNoneMatch: String?
+    ): JsonFetchResult {
+        var attempt = 0
+        var lastError: Throwable? = null
+        while (attempt <= MAX_TRANSIENT_RETRIES) {
+            try {
+                return fetchJsonOnce(url, ifNoneMatch)
+            } catch (rateLimit: GitHubRateLimitException) {
+                throw rateLimit
+            } catch (offline: GitHubOfflineException) {
+                throw offline
+            } catch (timeout: SocketTimeoutException) {
+                lastError = IOException("GitHub API request timed out. Check your connection and try again.", timeout)
+            } catch (io: IOException) {
+                lastError = io
+            }
+            attempt++
+            if (attempt <= MAX_TRANSIENT_RETRIES) {
+                delay(RETRY_DELAY_MS)
+            }
+        }
+        throw lastError ?: IOException("Unable to reach GitHub API.")
+    }
+
+    private fun fetchJsonOnce(url: String, ifNoneMatch: String?): JsonFetchResult {
+        val builder = Request.Builder()
             .url(url)
             .header("User-Agent", userAgent)
             .header("Accept", "application/vnd.github+json")
-            .build()
-
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IOException("GitHub API returned HTTP ${response.code}")
-            }
-            return response.body?.string() ?: throw IOException("Empty GitHub API response")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+        if (!ifNoneMatch.isNullOrBlank()) {
+            builder.header("If-None-Match", ifNoneMatch)
         }
+
+        return try {
+            client.newCall(builder.build()).execute().use { response ->
+                val etag = response.header("ETag")?.takeIf { it.isNotBlank() }
+                if (response.code == 304) {
+                    return JsonFetchResult(body = null, etag = etag ?: ifNoneMatch, notModified = true)
+                }
+                if (!response.isSuccessful) {
+                    throw translateHttpError(response)
+                }
+                val text = response.body?.string() ?: throw IOException("Empty GitHub API response")
+                JsonFetchResult(body = text, etag = etag, notModified = false)
+            }
+        } catch (uhe: UnknownHostException) {
+            throw GitHubOfflineException("Offline — could not resolve GitHub release server.")
+        }
+    }
+
+    private fun translateHttpError(response: Response): IOException {
+        val code = response.code
+        val remaining = response.header("X-RateLimit-Remaining")?.toIntOrNull()
+        val resetEpoch = response.header("X-RateLimit-Reset")?.toLongOrNull()
+        if (code == 429 || (code == 403 && remaining == 0)) {
+            val waitHint = resetEpoch?.let { reset ->
+                val mins = ((reset - (System.currentTimeMillis() / 1000L)) / 60L).coerceAtLeast(1L)
+                " Try again in about $mins min."
+            }.orEmpty()
+            return GitHubRateLimitException(
+                message = "GitHub API rate limit reached (HTTP $code).$waitHint",
+                resetEpochSeconds = resetEpoch
+            )
+        }
+        if (code in 500..599) {
+            return IOException("GitHub servers temporarily unavailable (HTTP $code).")
+        }
+        return IOException("GitHub API returned HTTP $code.")
     }
 
     private fun parseReleaseObject(obj: JSONObject): GitHubReleaseInfo {
@@ -136,14 +237,43 @@ class OkHttpReleaseMetadataSource(
                 }
             }
         }
+        val tagName = obj.optString("tag_name", "").trim()
+        val body = obj.optString("body", "").trim()
+        val parsedVersionCode = parseExplicitVersionCode(tagName = tagName, body = body)
+        val parsedMinSdk = parseExplicitMinSdk(body = body)
         return GitHubReleaseInfo(
-            tagName = obj.optString("tag_name", "").trim(),
-            name = obj.optString("name", "").trim().ifBlank { obj.optString("tag_name", "").trim() },
-            body = obj.optString("body", "").trim(),
+            tagName = tagName,
+            name = obj.optString("name", "").trim().ifBlank { tagName },
+            body = body,
             htmlUrl = obj.optString("html_url", "").trim(),
             isPrerelease = obj.optBoolean("prerelease", false),
             publishedAt = obj.optString("published_at", "").takeIf { it.isNotBlank() },
-            assets = assets
+            assets = assets,
+            isDraft = obj.optBoolean("draft", false),
+            versionCode = parsedVersionCode,
+            minSdkVersion = parsedMinSdk
+        )
+    }
+
+    private fun parseExplicitVersionCode(tagName: String, body: String): Long? {
+        UpdateVersionComparator.extractNumericBuildMetadata(tagName)?.let { return it }
+        val match = VERSION_CODE_BODY_REGEX.find(body) ?: return null
+        return match.groupValues[1].toLongOrNull()?.takeIf { it > 0L }
+    }
+
+    private fun parseExplicitMinSdk(body: String): Int? {
+        val match = MIN_SDK_BODY_REGEX.find(body) ?: return null
+        return match.groupValues[1].toIntOrNull()?.takeIf { it in 21..99 }
+    }
+
+    companion object {
+        private const val MAX_TRANSIENT_RETRIES = 1
+        private const val RETRY_DELAY_MS = 450L
+        private val VERSION_CODE_BODY_REGEX = Regex(
+            pattern = """(?im)(?:^|\b)version[_ ]?code\s*[:=]\s*(\d+)\b"""
+        )
+        private val MIN_SDK_BODY_REGEX = Regex(
+            pattern = """(?im)(?:^|\b)min[_ ]?sdk(?:[_ ]?version)?\s*[:=]\s*(\d+)\b"""
         )
     }
 }

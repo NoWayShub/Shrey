@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Shrey</string>
     <string name="app_tagline">Your media. Your way.</string>
-    <string name="app_version_display">Version 0.0.3</string>
+    <string name="app_version_display">Version 0.0.4</string>
 
     <!-- Navigation -->
     <string name="nav_home">Home</string>
@@ -80,4 +80,3 @@
     <string name="notification_channel_updates_desc">Notifications when a verified Shrey or extraction engine update is available</string>
     <string name="notification_update_available_title">Shrey update available</string>
 </resources>
-

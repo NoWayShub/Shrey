@@ -31,14 +31,18 @@ class MainActivity : ComponentActivity() {
             engineCoordinator = appContainer.engineCoordinator,
             downloadQueueManager = appContainer.downloadQueueManager,
             settingsDataStore = appContainer.settingsDataStore,
-            updateManager = appContainer.updateManager
+            updateManager = appContainer.updateManager,
+            collectionExtractor = appContainer.collectionExtractor,
+            batchCoordinator = appContainer.batchCoordinator,
+            storagePublisher = appContainer.storagePublisher
         )
     }
 
     private val downloadsViewModel: DownloadsViewModel by viewModels {
         DownloadsViewModel.Factory(
             queueManager = appContainer.downloadQueueManager,
-            storagePublisher = appContainer.storagePublisher
+            storagePublisher = appContainer.storagePublisher,
+            batchCoordinator = appContainer.batchCoordinator
         )
     }
 

@@ -14,12 +14,21 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 class EngineCoordinator(private val appContext: Context) {
 
     private val initMutex = Mutex()
     private val _state = MutableStateFlow<EngineState>(EngineState.Idle)
     val state: StateFlow<EngineState> = _state.asStateFlow()
+
+    fun getYtDlpCacheDir(): File {
+        val dir = File(appContext.cacheDir, YT_DLP_CACHE_DIR_NAME)
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
 
     suspend fun ensureInitialized(): Result<EngineDiagnostics> = initMutex.withLock {
         val current = _state.value
@@ -31,6 +40,10 @@ class EngineCoordinator(private val appContext: Context) {
 
         return@withLock withContext(Dispatchers.IO) {
             try {
+                // Ensure cacheDir (TMPDIR for QuickJS temp scripts) and yt-dlp cache dir exist.
+                appContext.cacheDir.mkdirs()
+                getYtDlpCacheDir()
+
                 // Recover cleanly if a previous transactional engine activation was interrupted.
                 val activeBinary = getExtractedYtDlpFile(appContext)
                 com.shrey.downloader.core.update.SafeEngineUpdater(
@@ -43,10 +56,9 @@ class EngineCoordinator(private val appContext: Context) {
                 ).recoverInterruptedUpdateIfNeeded()
 
                 // youtubedl-android's init_ytdlp() only extracts R.raw.ytdlp when the destination file
-                // does not already exist. Remove stale extracted binaries (e.g. 2025.11.12 from earlier
-                // installs) before init() so the SHA-256-verified bundled 2026.10.26 archive is unpacked.
-                // Note: Automatic runtime YoutubeDL.updateYoutubeDL() is intentionally NOT enabled here
-                // because upstream YoutubeDLUpdater downloads payloads without SHA-256 checksum checks.
+                // does not already exist. Remove stale or unpatched extracted binaries (including earlier
+                // 2026.10.26 builds lacking our Android QuickJS/EJS fixes) before init() so the
+                // bundled archive is unpacked cleanly, while preserving any newer verified engine update.
                 refreshBundledYtDlpIfStale(appContext)
 
                 YoutubeDL.getInstance().init(appContext)
@@ -65,7 +77,7 @@ class EngineCoordinator(private val appContext: Context) {
                     ?: BUNDLED_YT_DLP_VERSION
 
                 val pythonVersion = detectEmbeddedPythonVersion(appContext)
-                val jsRuntime = detectJsRuntime(appContext)
+                val jsProbe = probeJsRuntime(appContext)
                 val displayVersion = buildString {
                     append(resolvedVersion)
                     archiveInfo.ejsVersion?.let { append(" · EJS $it") }
@@ -74,11 +86,12 @@ class EngineCoordinator(private val appContext: Context) {
                 val diagnostics = EngineDiagnostics(
                     ytDlpVersion = displayVersion,
                     ffmpegAvailable = ffmpegReady,
-                    jsRuntimeName = jsRuntime,
+                    jsRuntimeName = jsProbe.displayName,
                     jsRuntimeNote = buildRuntimeNote(
-                        jsRuntime = jsRuntime,
+                        jsProbe = jsProbe,
                         pythonVersion = pythonVersion,
-                        ejsVersion = archiveInfo.ejsVersion
+                        ejsVersion = archiveInfo.ejsVersion,
+                        hasEjsSolverScripts = archiveInfo.hasEjsSolverScripts
                     ),
                     pythonVersion = pythonVersion,
                     ejsVersion = archiveInfo.ejsVersion,
@@ -108,9 +121,38 @@ class EngineCoordinator(private val appContext: Context) {
     private fun refreshBundledYtDlpIfStale(context: Context) {
         val extractedFile = getExtractedYtDlpFile(context)
         if (!extractedFile.exists()) return
+
         val existingInfo = YtDlpArchiveInspector.inspect(extractedFile)
-        if (YtDlpArchiveInspector.isVersionOlderThan(existingInfo.ytDlpVersion, BUNDLED_YT_DLP_VERSION)) {
+        val isOlderYtDlp = YtDlpArchiveInspector.isVersionOlderThan(
+            existingInfo.ytDlpVersion,
+            BUNDLED_YT_DLP_VERSION
+        )
+        if (isOlderYtDlp) {
             extractedFile.delete()
+            return
+        }
+
+        // Preserve genuinely newer verified engine versions (> BUNDLED_YT_DLP_VERSION) unless
+        // their EJS solver scripts are missing or corrupt.
+        val isSameAsBundledVersion = existingInfo.ytDlpVersion == BUNDLED_YT_DLP_VERSION
+        val isEjsIncomplete = !existingInfo.hasEjsSolverScripts ||
+            YtDlpArchiveInspector.isSemverOlderThan(existingInfo.ejsVersion, BUNDLED_EJS_VERSION)
+
+        if (isEjsIncomplete) {
+            extractedFile.delete()
+            return
+        }
+
+        if (isSameAsBundledVersion) {
+            val bundledHash = runCatching {
+                context.resources
+                    .openRawResource(com.yausername.youtubedl_android.R.raw.ytdlp)
+                    .use { YtDlpArchiveInspector.computeSha256(it) }
+            }.getOrNull()
+            val extractedHash = YtDlpArchiveInspector.computeSha256(extractedFile)
+            if (bundledHash != null && extractedHash != null && !bundledHash.equals(extractedHash, ignoreCase = true)) {
+                extractedFile.delete()
+            }
         }
     }
 
@@ -130,40 +172,122 @@ class EngineCoordinator(private val appContext: Context) {
         }
     }
 
-    private fun detectJsRuntime(context: Context): String? {
+    private data class JsRuntimeProbeResult(
+        val displayName: String?,
+        val executableVerified: Boolean,
+        val failureReason: String? = null
+    )
+
+    private fun probeJsRuntime(context: Context): JsRuntimeProbeResult {
         val nativeLibDir = context.applicationInfo?.nativeLibraryDir?.let { File(it) }
-        val candidates = listOf(
-            "libqjs.so" to "QuickJS (libqjs.so)",
-            "libquickjs.so" to "QuickJS",
+        if (nativeLibDir == null || !nativeLibDir.exists()) {
+            return JsRuntimeProbeResult(
+                displayName = null,
+                executableVerified = false,
+                failureReason = "nativeLibraryDir is unavailable"
+            )
+        }
+
+        val quickJsFile = File(nativeLibDir, "libqjs.so")
+            .takeIf { it.exists() }
+            ?: File(nativeLibDir, "libquickjs.so").takeIf { it.exists() }
+
+        if (quickJsFile != null) {
+            if (!quickJsFile.canExecute()) {
+                return JsRuntimeProbeResult(
+                    displayName = "QuickJS (${quickJsFile.name} · not executable)",
+                    executableVerified = false,
+                    failureReason = "${quickJsFile.name} is present but lacks execute permission"
+                )
+            }
+            val probeOutput = runQuickJsVersionProbe(quickJsFile)
+            val parsedVersion = probeOutput?.let { parseQuickJsVersion(it) }
+            return if (parsedVersion != null) {
+                JsRuntimeProbeResult(
+                    displayName = "QuickJS $parsedVersion (${quickJsFile.name})",
+                    executableVerified = true
+                )
+            } else {
+                JsRuntimeProbeResult(
+                    displayName = "QuickJS (${quickJsFile.name})",
+                    executableVerified = false,
+                    failureReason = "QuickJS version probe did not return an expected banner"
+                )
+            }
+        }
+
+        val fallbackCandidates = listOf(
             "libdeno.so" to "Deno",
             "libnode.so" to "Node.js"
         )
-        if (nativeLibDir != null && nativeLibDir.exists()) {
-            for ((filename, name) in candidates) {
-                if (File(nativeLibDir, filename).exists()) {
-                    return name
-                }
+        for ((filename, name) in fallbackCandidates) {
+            val file = File(nativeLibDir, filename)
+            if (file.exists()) {
+                return JsRuntimeProbeResult(
+                    displayName = name,
+                    executableVerified = file.canExecute()
+                )
             }
         }
-        return null
+
+        return JsRuntimeProbeResult(
+            displayName = null,
+            executableVerified = false,
+            failureReason = "No JS runtime binary found in nativeLibraryDir"
+        )
+    }
+
+    private fun runQuickJsVersionProbe(binary: File): String? {
+        return runCatching {
+            val pb = ProcessBuilder(binary.absolutePath, "--help").apply {
+                redirectErrorStream(true)
+                // Strip LD_LIBRARY_PATH so Android linker64 does not warn or load Python/FFmpeg libs.
+                environment().remove("LD_LIBRARY_PATH")
+            }
+            val process = pb.start()
+            val finished = process.waitFor(QUICKJS_PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                return@runCatching null
+            }
+            process.inputStream.bufferedReader().use { it.readText() }
+        }.getOrNull()
     }
 
     private fun buildRuntimeNote(
-        jsRuntime: String?,
+        jsProbe: JsRuntimeProbeResult,
         pythonVersion: String?,
-        ejsVersion: String?
+        ejsVersion: String?,
+        hasEjsSolverScripts: Boolean
     ): String {
         val pyPart = pythonVersion ?: "Embedded Python"
-        return if (jsRuntime != null) {
-            val ejsPart = ejsVersion?.let { " with yt-dlp-ejs $it" }.orEmpty()
-            "Running locally on $pyPart with $jsRuntime$ejsPart wired automatically by youtubedl-android."
-        } else {
-            "Running locally on $pyPart. No external JS runtime detected in nativeLibraryDir; some sites requiring JS challenge solving may restrict formats."
+        val ejsPart = when {
+            ejsVersion != null && hasEjsSolverScripts -> " with yt-dlp-ejs $ejsVersion"
+            ejsVersion != null -> " (yt-dlp-ejs $ejsVersion solver scripts incomplete)"
+            else -> " (yt-dlp-ejs solver scripts missing)"
+        }
+        return when {
+            jsProbe.displayName != null && jsProbe.executableVerified && hasEjsSolverScripts ->
+                "Running locally on $pyPart with verified ${jsProbe.displayName}$ejsPart."
+            jsProbe.displayName != null -> {
+                val reason = jsProbe.failureReason?.let { " ($it)" }.orEmpty()
+                "Running locally on $pyPart with ${jsProbe.displayName}$ejsPart$reason."
+            }
+            else ->
+                "Running locally on $pyPart. No external JS runtime detected in nativeLibraryDir; some sites requiring JS challenge solving may restrict formats."
         }
     }
 
     companion object {
         const val BUNDLED_YT_DLP_VERSION = "2026.10.26"
+        const val BUNDLED_EJS_VERSION = "0.8.0"
         const val BUNDLED_FFMPEG_VERSION = "7.1.1"
+        private const val YT_DLP_CACHE_DIR_NAME = "yt-dlp-cache"
+        private const val QUICKJS_PROBE_TIMEOUT_SECONDS = 3L
+        private val QUICKJS_VERSION_REGEX = Regex("""(?m)^QuickJS(?:-ng)?\s+version\s+(\S+)""")
+
+        internal fun parseQuickJsVersion(helpOutput: String): String? {
+            return QUICKJS_VERSION_REGEX.find(helpOutput)?.groupValues?.getOrNull(1)?.trim()
+        }
     }
 }

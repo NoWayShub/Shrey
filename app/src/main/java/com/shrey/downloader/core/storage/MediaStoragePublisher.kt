@@ -25,12 +25,21 @@ data class PublishedMedia(
 
 class MediaStoragePublisher(private val context: Context) {
 
+    fun availableStorageBytes(): Long {
+        return try {
+            val stat = StatFs(context.cacheDir.absolutePath)
+            if (stat.totalBytes <= 0L) 0L else stat.availableBytes
+        } catch (_: Throwable) {
+            0L
+        }
+    }
+
     fun checkAvailableSpace(requiredBytes: Long): Boolean {
         return try {
             val stat = StatFs(context.cacheDir.absolutePath)
-            val available = stat.availableBytes
+            if (stat.totalBytes <= 0L) return true
             val bufferBytes = 16L * 1024L * 1024L
-            available > (requiredBytes + bufferBytes)
+            stat.availableBytes > (requiredBytes + bufferBytes)
         } catch (_: Throwable) {
             true
         }
@@ -41,7 +50,8 @@ class MediaStoragePublisher(private val context: Context) {
         desiredTitle: String,
         extension: String,
         mode: DownloadMode,
-        customTreeUriString: String?
+        customTreeUriString: String?,
+        relativeSubfolder: String? = null
     ): PublishedMedia {
         if (!sourceFile.exists() || sourceFile.length() <= 0L) {
             throw ShreyError.StorageWriteFailed("Output file is missing or empty")
@@ -55,13 +65,16 @@ class MediaStoragePublisher(private val context: Context) {
         val safeFilename = FilenameSanitizer.buildFilename(desiredTitle, extension)
         val mimeType = Formatters.mimeTypeForExtension(extension)
 
+        val safeSegments = FilenameSanitizer.sanitizeSubfolderSegments(relativeSubfolder)
+
         if (!customTreeUriString.isNullOrBlank()) {
             return publishToSafTree(
                 sourceFile = sourceFile,
                 treeUriString = customTreeUriString,
                 safeFilename = safeFilename,
                 mimeType = mimeType,
-                sizeBytes = fileSize
+                sizeBytes = fileSize,
+                subfolderSegments = safeSegments
             )
         }
 
@@ -70,7 +83,8 @@ class MediaStoragePublisher(private val context: Context) {
             safeFilename = safeFilename,
             mimeType = mimeType,
             mode = mode,
-            sizeBytes = fileSize
+            sizeBytes = fileSize,
+            subfolderSegments = safeSegments
         )
     }
 
@@ -79,10 +93,11 @@ class MediaStoragePublisher(private val context: Context) {
         safeFilename: String,
         mimeType: String,
         mode: DownloadMode,
-        sizeBytes: Long
+        sizeBytes: Long,
+        subfolderSegments: List<String>
     ): PublishedMedia {
         val resolver = context.contentResolver
-        val (collectionUri, relativePath) = when (mode) {
+        val (collectionUri, baseRelativePath) = when (mode) {
             DownloadMode.VIDEO_AUDIO, DownloadMode.VIDEO_ONLY -> {
                 MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY) to
                     "${Environment.DIRECTORY_MOVIES}/Shrey"
@@ -95,6 +110,12 @@ class MediaStoragePublisher(private val context: Context) {
                 MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY) to
                     "${Environment.DIRECTORY_PICTURES}/Shrey"
             }
+        }
+
+        val relativePath = if (subfolderSegments.isEmpty()) {
+            baseRelativePath
+        } else {
+            "$baseRelativePath/${subfolderSegments.joinToString("/")}"
         }
 
         val values = ContentValues().apply {
@@ -143,7 +164,8 @@ class MediaStoragePublisher(private val context: Context) {
         treeUriString: String,
         safeFilename: String,
         mimeType: String,
-        sizeBytes: Long
+        sizeBytes: Long,
+        subfolderSegments: List<String>
     ): PublishedMedia {
         val treeUri = Uri.parse(treeUriString)
         val rootDir = DocumentFile.fromTreeUri(context, treeUri)
@@ -151,10 +173,17 @@ class MediaStoragePublisher(private val context: Context) {
             throw ShreyError.StorageWriteFailed("Custom destination folder permission is unavailable or revoked")
         }
 
-        val existingNames = rootDir.listFiles().mapNotNull { it.name }.toSet()
+        var targetDir: DocumentFile = rootDir
+        for (segment in subfolderSegments) {
+            val existingChild = targetDir.findFile(segment)?.takeIf { it.isDirectory }
+            targetDir = existingChild ?: targetDir.createDirectory(segment)
+                ?: throw ShreyError.StorageWriteFailed("Could not create folder '$segment' in selected destination")
+        }
+
+        val existingNames = targetDir.listFiles().mapNotNull { it.name }.toSet()
         val uniqueFilename = FilenameSanitizer.deduplicateFilename(safeFilename, existingNames)
 
-        val targetDoc = rootDir.createFile(mimeType, uniqueFilename)
+        val targetDoc = targetDir.createFile(mimeType, uniqueFilename)
             ?: throw ShreyError.StorageWriteFailed("Could not create document in selected folder")
 
         try {

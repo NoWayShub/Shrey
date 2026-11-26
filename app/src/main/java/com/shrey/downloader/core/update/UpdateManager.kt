@@ -1,6 +1,7 @@
 package com.shrey.downloader.core.update
 
 import android.content.Context
+import android.os.Build
 import com.example.BuildConfig
 import com.shrey.downloader.core.engine.EngineCoordinator
 import com.shrey.downloader.core.notifications.DownloadNotificationManager
@@ -14,7 +15,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -29,7 +29,9 @@ class UpdateManager(
     private val engineCoordinator: EngineCoordinator,
     private val installedAppVersionName: String = BuildConfig.VERSION_NAME,
     private val installedAppVersionCode: Long = BuildConfig.VERSION_CODE.toLong(),
-    private val nowMillisProvider: () -> Long = { System.currentTimeMillis() }
+    private val nowMillisProvider: () -> Long = { System.currentTimeMillis() },
+    private val deviceSdkInt: Int = Build.VERSION.SDK_INT,
+    private val deviceSupportedAbis: Set<String> = Build.SUPPORTED_ABIS.toSet()
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val checkMutex = Mutex()
@@ -81,39 +83,93 @@ class UpdateManager(
             )
 
             val ytDlpResult = metadataSource.fetchLatestYtDlpRelease()
-            val shreyReleasesResult = metadataSource.fetchShreyReleases()
+            // Send cached ETag via If-None-Match only when cached metadata exists for the current channel.
+            val cachedMatchesChannel = cachedReleaseMatchesChannel(currentRecord)
+            val etagToSend = currentRecord.shreyReleasesEtag?.takeIf {
+                cachedMatchesChannel && currentRecord.lastCheckedAtMillis != null
+            }
+            var shreyReleasesResult = metadataSource.fetchShreyReleasesConditional(etagToSend)
 
-            if (ytDlpResult.isFailure && shreyReleasesResult.isFailure) {
+            // If Shrey releases check failed (offline, timeout, HTTP error, rate limit),
+            // ALWAYS report a check failure rather than preserving stale "Update available" status.
+            if (shreyReleasesResult.isFailure) {
                 val errMsg = shreyReleasesResult.exceptionOrNull()?.message
                     ?: ytDlpResult.exceptionOrNull()?.message
-                    ?: "Unable to reach GitHub release metadata."
+                    ?: "Unable to reach Shrey GitHub releases."
                 updateStore.saveFailedCheck(errMsg)
-                val updated = _snapshot.value.copy(
-                    checkState = UpdateCheckState.FAILED,
-                    lastErrorMessage = errMsg
+                val failedRecord = updateStore.recordFlow.first()
+                val failedSnapshot = buildSnapshotFromRecord(
+                    record = failedRecord,
+                    previous = _snapshot.value,
+                    preserveCheckingState = false
                 )
-                _snapshot.value = updated
+                _snapshot.value = failedSnapshot
                 return Result.failure(IllegalStateException(errMsg))
             }
 
+            // Defensive fallback: if server returned 304 when we have no valid cached release for the channel,
+            // refetch without If-None-Match so metadata is never missing or stale.
+            if (shreyReleasesResult.getOrNull()?.notModified == true && !cachedMatchesChannel) {
+                shreyReleasesResult = metadataSource.fetchShreyReleasesConditional(ifNoneMatch = null)
+                if (shreyReleasesResult.isFailure) {
+                    val errMsg = shreyReleasesResult.exceptionOrNull()?.message
+                        ?: "Unable to reach Shrey GitHub releases."
+                    updateStore.saveFailedCheck(errMsg)
+                    val failedRecord = updateStore.recordFlow.first()
+                    _snapshot.value = buildSnapshotFromRecord(
+                        record = failedRecord,
+                        previous = _snapshot.value,
+                        preserveCheckingState = false
+                    )
+                    return Result.failure(IllegalStateException(errMsg))
+                }
+            }
+
             val ytDlpRelease = ytDlpResult.getOrNull()
-            val selectedAppRelease = shreyReleasesResult.getOrNull()?.let { releases ->
-                selectLatestReleaseForChannel(releases, currentRecord.preferences.channel)
+            val shreyConditional = shreyReleasesResult.getOrNull()
+            val isNotModified = shreyConditional?.notModified == true
+
+            val selectedAppRelease = if (!isNotModified) {
+                shreyConditional?.releases?.let { releases ->
+                    selectLatestReleaseForChannel(releases, currentRecord.preferences.channel)
+                }
+            } else {
+                null
             }
-            val apkAsset = selectedAppRelease?.assets?.firstOrNull {
-                it.name.endsWith(".apk", ignoreCase = true)
-            }
+            val apkAsset = selectedAppRelease?.let { selectCompatibleApkAsset(it.assets) }
 
             val installedEngine = resolveInstalledEngineVersion(currentRecord)
             val availableYtDlp = ytDlpRelease?.tagName?.takeIf { it.isNotBlank() }
+                ?: currentRecord.availableYtDlpVersion
             val ytDlpNewer = availableYtDlp != null &&
                 UpdateVersionComparator.isYtDlpVersionNewer(availableYtDlp, installedEngine)
 
-            val latestAppVer = selectedAppRelease?.tagName?.let {
-                UpdateVersionComparator.normalizeVersionLabel(it)
+            val latestAppVer = if (isNotModified) {
+                currentRecord.latestAppVersion?.takeIf { cachedMatchesChannel }
+            } else {
+                selectedAppRelease?.tagName?.let {
+                    UpdateVersionComparator.normalizeVersionLabel(it)
+                }
             }
+            val latestAppVersionCode = if (isNotModified) {
+                currentRecord.latestAppVersionCode?.takeIf { cachedMatchesChannel }
+            } else {
+                selectedAppRelease?.versionCode
+            }
+            val latestAppApkUrl = if (isNotModified) {
+                currentRecord.latestAppApkUrl?.takeIf { cachedMatchesChannel }
+            } else {
+                apkAsset?.downloadUrl
+            }
+
             val appNewer = latestAppVer != null &&
-                UpdateVersionComparator.isShreyVersionNewer(latestAppVer, installedAppVersionName)
+                !latestAppApkUrl.isNullOrBlank() &&
+                UpdateVersionComparator.isShreyAppUpdateAvailable(
+                    candidateVersion = latestAppVer,
+                    installedVersion = installedAppVersionName,
+                    candidateVersionCode = latestAppVersionCode,
+                    installedVersionCode = installedAppVersionCode
+                )
 
             val checkState = if (ytDlpNewer || appNewer) {
                 UpdateCheckState.UPDATE_AVAILABLE
@@ -125,9 +181,11 @@ class UpdateManager(
                 checkedAtMillis = now,
                 state = checkState,
                 availableYtDlpVersion = availableYtDlp,
-                availableYtDlpUrl = ytDlpRelease?.htmlUrl,
+                availableYtDlpUrl = ytDlpRelease?.htmlUrl ?: currentRecord.availableYtDlpUrl,
                 latestAppRelease = selectedAppRelease,
-                apkAsset = apkAsset
+                apkAsset = apkAsset,
+                shreyReleasesEtag = shreyConditional?.etag ?: etagToSend,
+                preserveCachedAppRelease = isNotModified
             )
 
             val freshRecord = updateStore.recordFlow.first()
@@ -288,19 +346,90 @@ class UpdateManager(
         releases: List<GitHubReleaseInfo>,
         channel: UpdateChannel
     ): GitHubReleaseInfo? {
+        // Ignore drafts, malformed/unparseable version tags, and explicitly incompatible releases.
+        val validSemVerReleases = releases.filter { release ->
+            !release.isDraft &&
+                UpdateVersionComparator.compareShreyVersions(release.tagName, "0.0.0") != null &&
+                isReleaseCompatibleWithDevice(release)
+        }
         val eligible = when (channel) {
-            UpdateChannel.STABLE -> releases.filter { !it.isPrerelease }
-            UpdateChannel.BETA -> releases
+            UpdateChannel.STABLE -> validSemVerReleases.filter {
+                !it.isPrerelease && !UpdateVersionComparator.isPrereleaseVersion(it.tagName)
+            }
+            UpdateChannel.BETA -> validSemVerReleases
         }
-        return eligible.maxWithOrNull { a, b ->
-            UpdateVersionComparator.compareShreyVersions(a.tagName, b.tagName) ?: 0
+        if (eligible.isEmpty()) return null
+
+        // Prefer installable releases that include a compatible APK asset; fall back to metadata-only
+        // releases purely for display (which can never trigger app.updateAvailable without an APK).
+        val installable = eligible.filter { selectCompatibleApkAsset(it.assets) != null }
+        val pool = if (installable.isNotEmpty()) installable else eligible
+
+        // Never use publishedAt for version ordering — strictly numeric SemVer, then explicit versionCode.
+        return pool.maxWithOrNull { a, b ->
+            val semVerCmp = UpdateVersionComparator.compareShreyVersions(a.tagName, b.tagName) ?: 0
+            if (semVerCmp != 0) {
+                semVerCmp
+            } else {
+                (a.versionCode ?: -1L).compareTo(b.versionCode ?: -1L)
+            }
         }
+    }
+
+    private fun isReleaseCompatibleWithDevice(release: GitHubReleaseInfo): Boolean {
+        if (release.minSdkVersion != null && release.minSdkVersion > deviceSdkInt) {
+            return false
+        }
+        // If assets are present on the release, at least one must be a compatible Android APK.
+        if (release.assets.isNotEmpty() && selectCompatibleApkAsset(release.assets) == null) {
+            return false
+        }
+        return true
+    }
+
+    internal fun selectCompatibleApkAsset(assets: List<GitHubReleaseAsset>): GitHubReleaseAsset? {
+        val apkAssets = assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
+        if (apkAssets.isEmpty()) return null
+
+        var abiSpecificMatch: GitHubReleaseAsset? = null
+        var universalMatch: GitHubReleaseAsset? = null
+
+        for (asset in apkAssets) {
+            val abisInName = extractAbiTokens(asset.name)
+            if (abisInName.isEmpty()) {
+                if (universalMatch == null) universalMatch = asset
+            } else if (deviceSupportedAbis.isEmpty() || abisInName.any { it in deviceSupportedAbis }) {
+                if (abiSpecificMatch == null) abiSpecificMatch = asset
+            }
+        }
+        return abiSpecificMatch ?: universalMatch
+    }
+
+    private fun extractAbiTokens(fileName: String): Set<String> {
+        val lower = fileName.lowercase()
+        val found = linkedSetOf<String>()
+        if (lower.contains("arm64-v8a") || lower.contains("arm64_v8a")) found.add("arm64-v8a")
+        if (lower.contains("armeabi-v7a") || lower.contains("armeabi_v7a")) found.add("armeabi-v7a")
+        if (lower.contains("x86_64") || lower.contains("x86-64")) {
+            found.add("x86_64")
+        } else if (Regex("""(?:^|[^a-z0-9])x86(?:[^a-z0-9]|$)""").containsMatchIn(lower)) {
+            found.add("x86")
+        }
+        return found
+    }
+
+    private fun cachedReleaseMatchesChannel(record: PersistedUpdateRecord): Boolean {
+        if (record.latestAppVersion.isNullOrBlank()) return true
+        if (record.preferences.channel == UpdateChannel.BETA) return true
+        return !record.latestAppIsPrerelease &&
+            !UpdateVersionComparator.isPrereleaseVersion(record.latestAppVersion)
     }
 
     private suspend fun maybeNotifyUpdateAvailable(
         record: PersistedUpdateRecord,
         snapshot: UpdateSnapshot
     ) {
+        if (snapshot.checkState == UpdateCheckState.FAILED) return
         val settings = settingsDataStore.settingsFlow.first()
         if (!settings.notificationsEnabled) return
 
@@ -312,14 +441,21 @@ class UpdateManager(
         }
         if (newAppVer == null && newYtDlpVer == null) return
 
+        val notificationTitle = when {
+            newAppVer != null && newYtDlpVer != null -> "Shrey app & yt-dlp updates available"
+            newAppVer != null -> "Shrey app update available"
+            else -> "yt-dlp update available"
+        }
+
         val summary = buildList {
-            if (newAppVer != null) add("Shrey $newAppVer")
+            if (newAppVer != null) add("Shrey app $newAppVer")
             if (newYtDlpVer != null) add("yt-dlp $newYtDlpVer")
         }.joinToString(" · ")
 
         notificationManager.showUpdateAvailableNotification(
-            summary = "$summary available — open Settings to review",
-            notificationsEnabled = settings.notificationsEnabled
+            summary = "$summary update available — open Settings to review",
+            notificationsEnabled = settings.notificationsEnabled,
+            title = notificationTitle
         )
         updateStore.markNotified(appVersion = newAppVer, ytDlpVersion = newYtDlpVer)
     }
@@ -360,9 +496,13 @@ class UpdateManager(
         previous: UpdateSnapshot,
         preserveCheckingState: Boolean = false
     ): UpdateSnapshot {
+        val preserveChecking = preserveCheckingState && previous.checkState == UpdateCheckState.CHECKING
+        val isFailed = !preserveChecking && record.checkState == UpdateCheckState.FAILED
+
         val installedEngine = resolveInstalledEngineVersion(record)
         val availYtDlp = record.availableYtDlpVersion
-        val ytDlpNewer = availYtDlp != null &&
+        val ytDlpNewer = !isFailed &&
+            availYtDlp != null &&
             UpdateVersionComparator.isYtDlpVersionNewer(availYtDlp, installedEngine)
 
         val (compatStatus, compatDetail) = when {
@@ -374,13 +514,24 @@ class UpdateManager(
                 "Compatible update $availYtDlp ready for signed manifest verification."
         }
 
-        val appNewer = record.latestAppVersion != null &&
-            UpdateVersionComparator.isShreyVersionNewer(record.latestAppVersion, installedAppVersionName)
+        val channelMatches = cachedReleaseMatchesChannel(record)
+        val latestAppVer = record.latestAppVersion?.takeIf { channelMatches }
+        val latestAppCode = record.latestAppVersionCode?.takeIf { channelMatches }
+        val latestAppApkUrl = record.latestAppApkUrl?.takeIf { channelMatches }
 
-        val preserveChecking = preserveCheckingState && previous.checkState == UpdateCheckState.CHECKING
+        val appNewer = !isFailed &&
+            latestAppVer != null &&
+            !latestAppApkUrl.isNullOrBlank() &&
+            UpdateVersionComparator.isShreyAppUpdateAvailable(
+                candidateVersion = latestAppVer,
+                installedVersion = installedAppVersionName,
+                candidateVersionCode = latestAppCode,
+                installedVersionCode = installedAppVersionCode
+            )
+
         val effectiveState = when {
             preserveChecking -> UpdateCheckState.CHECKING
-            record.checkState == UpdateCheckState.FAILED -> UpdateCheckState.FAILED
+            isFailed -> UpdateCheckState.FAILED
             record.lastCheckedAtMillis == null -> UpdateCheckState.IDLE
             ytDlpNewer || appNewer -> UpdateCheckState.UPDATE_AVAILABLE
             else -> UpdateCheckState.UP_TO_DATE
@@ -411,7 +562,7 @@ class UpdateManager(
                 supportedVersion = UpdateTrustConfig.BUNDLED_FFMPEG_VERSION,
                 availableViaAppUpdate = appNewer,
                 note = if (appNewer) {
-                    "Newer Shrey release available — native FFmpeg updates are delivered only via signed Shrey APKs."
+                    "Newer Shrey app release available — native FFmpeg updates are delivered only via signed Shrey APKs."
                 } else {
                     "Bundled FFmpeg ${UpdateTrustConfig.BUNDLED_FFMPEG_VERSION} matches supported baseline. Updated via signed Shrey APKs."
                 }
@@ -419,15 +570,19 @@ class UpdateManager(
             app = AppUpdateStatus(
                 installedVersionName = installedAppVersionName,
                 installedVersionCode = installedAppVersionCode,
-                latestVersionName = record.latestAppVersion,
-                latestTagName = record.latestAppTag,
-                isPrerelease = record.latestAppIsPrerelease,
+                latestVersionName = latestAppVer,
+                latestVersionCode = latestAppCode,
+                latestTagName = record.latestAppTag?.takeIf { channelMatches },
+                latestReleaseTitle = record.latestAppTitle?.takeIf { channelMatches },
+                latestPublishedAt = record.latestAppPublishedAt?.takeIf { channelMatches },
+                isPrerelease = record.latestAppIsPrerelease && channelMatches,
                 updateAvailable = appNewer,
-                releaseNotes = record.latestAppNotes,
-                releasePageUrl = record.latestAppReleaseUrl ?: UpdateTrustConfig.SHREY_RELEASES_WEB_URL,
-                apkDownloadUrl = record.latestAppApkUrl,
-                apkFileName = record.latestAppApkName,
-                apkSizeBytes = record.latestAppApkSize,
+                releaseNotes = record.latestAppNotes?.takeIf { channelMatches },
+                releasePageUrl = record.latestAppReleaseUrl?.takeIf { channelMatches }
+                    ?: UpdateTrustConfig.SHREY_RELEASES_WEB_URL,
+                apkDownloadUrl = latestAppApkUrl,
+                apkFileName = record.latestAppApkName?.takeIf { channelMatches },
+                apkSizeBytes = record.latestAppApkSize?.takeIf { channelMatches },
                 isDownloadingApk = previous.app.isDownloadingApk,
                 apkDownloadProgress = previous.app.apkDownloadProgress,
                 verifiedApkUri = previous.app.verifiedApkUri,

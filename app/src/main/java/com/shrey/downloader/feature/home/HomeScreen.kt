@@ -60,9 +60,18 @@ import com.shrey.downloader.core.design.ShreyTopGradualBlurContainer
 import com.shrey.downloader.core.engine.EngineCoordinator
 import com.shrey.downloader.core.update.UpdateCheckState
 import com.shrey.downloader.core.update.UpdateSnapshot
+import com.shrey.downloader.domain.model.AudioOutputFormat
+import com.shrey.downloader.domain.model.BulkQualityPreset
+import com.shrey.downloader.domain.model.ChannelContentTab
+import com.shrey.downloader.domain.model.ChannelScopePreset
+import com.shrey.downloader.domain.model.DownloadMode
 import com.shrey.downloader.domain.model.EngineState
+import com.shrey.downloader.domain.model.FormatOption
+import com.shrey.downloader.domain.model.MediaSourceType
 import com.shrey.downloader.domain.model.ShreyError
+import com.shrey.downloader.domain.model.ThumbnailOutputFormat
 import com.shrey.downloader.navigation.LocalShreyBottomBarPadding
+import com.shrey.downloader.navigation.rememberShreyBottomScrollClearance
 
 @Composable
 fun HomeScreen(
@@ -106,6 +115,23 @@ fun HomeScreen(
         onOpenDownloads = onOpenDownloads,
         onOpenSettings = onOpenSettings,
         contentBottomPadding = effectiveBottomPadding,
+        onChooseAmbiguousVideo = viewModel::resolveAmbiguousAsSingleVideo,
+        onChooseAmbiguousPlaylist = viewModel::resolveAmbiguousAsPlaylist,
+        onTogglePlaylistEntry = viewModel::togglePlaylistEntry,
+        onSelectAllPlaylist = viewModel::selectAllPlaylistEntries,
+        onDeselectAllPlaylist = viewModel::deselectAllPlaylistEntries,
+        onLoadMorePlaylist = viewModel::loadMorePlaylistEntries,
+        onStartPlaylistBatch = viewModel::startPlaylistBatch,
+        onBulkQualitySelected = viewModel::setBulkQuality,
+        onBulkAudioFormatSelected = viewModel::setBulkAudioFormat,
+        onBulkWifiOnlyChanged = viewModel::setBulkWifiOnly,
+        onToggleChannelTab = viewModel::toggleChannelTab,
+        onChannelScopeSelected = viewModel::setChannelScope,
+        onChannelCustomLimitChanged = viewModel::setChannelCustomLimit,
+        onLoadMoreChannel = viewModel::loadMoreChannelEntries,
+        onRequestChannelConfirm = viewModel::requestChannelConfirmation,
+        onDismissChannelConfirm = viewModel::dismissChannelConfirmation,
+        onConfirmChannelBatch = viewModel::confirmAndStartChannelBatch,
         modifier = modifier
     )
 }
@@ -120,10 +146,10 @@ fun HomeScreenContent(
     onClearClick: () -> Unit,
     onAnalyzeClick: () -> Unit,
     onRetryEngine: () -> Unit,
-    onModeSelected: (com.shrey.downloader.domain.model.DownloadMode) -> Unit,
-    onOptionSelected: (com.shrey.downloader.domain.model.FormatOption) -> Unit,
-    onAudioFormatSelected: (com.shrey.downloader.domain.model.AudioOutputFormat) -> Unit,
-    onThumbnailFormatSelected: (com.shrey.downloader.domain.model.ThumbnailOutputFormat) -> Unit,
+    onModeSelected: (DownloadMode) -> Unit,
+    onOptionSelected: (FormatOption) -> Unit,
+    onAudioFormatSelected: (AudioOutputFormat) -> Unit,
+    onThumbnailFormatSelected: (ThumbnailOutputFormat) -> Unit,
     onToggleTechnicalDetails: () -> Unit,
     onStartDownload: () -> Unit,
     onOpenDownloads: () -> Unit,
@@ -131,11 +157,29 @@ fun HomeScreenContent(
     contentBottomPadding: PaddingValues,
     modifier: Modifier = Modifier,
     updateSnapshot: UpdateSnapshot? = null,
-    onCheckEngineUpdates: (() -> Unit)? = null
+    onCheckEngineUpdates: (() -> Unit)? = null,
+    onChooseAmbiguousVideo: () -> Unit = {},
+    onChooseAmbiguousPlaylist: () -> Unit = {},
+    onTogglePlaylistEntry: (String) -> Unit = {},
+    onSelectAllPlaylist: () -> Unit = {},
+    onDeselectAllPlaylist: () -> Unit = {},
+    onLoadMorePlaylist: () -> Unit = {},
+    onStartPlaylistBatch: () -> Unit = {},
+    onBulkQualitySelected: (BulkQualityPreset) -> Unit = {},
+    onBulkAudioFormatSelected: (AudioOutputFormat) -> Unit = {},
+    onBulkWifiOnlyChanged: (Boolean) -> Unit = {},
+    onToggleChannelTab: (ChannelContentTab) -> Unit = {},
+    onChannelScopeSelected: (ChannelScopePreset) -> Unit = {},
+    onChannelCustomLimitChanged: (Int) -> Unit = {},
+    onLoadMoreChannel: () -> Unit = {},
+    onRequestChannelConfirm: () -> Unit = {},
+    onDismissChannelConfirm: () -> Unit = {},
+    onConfirmChannelBatch: () -> Unit = {}
 ) {
     val palette = ShreyThemeTokens.palette
     val density = LocalDensity.current
     val statusBarTop = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
+    val bottomScrollClearance = rememberShreyBottomScrollClearance(contentBottomPadding)
     val scrollState = rememberScrollState()
     val topBlurProgress by remember {
         derivedStateOf { (scrollState.value / 72f).coerceIn(0f, 1f) }
@@ -143,6 +187,7 @@ fun HomeScreenContent(
 
     ShreyTopGradualBlurContainer(
         scrollProgress = topBlurProgress,
+        scrollOffsetProvider = { scrollState.value },
         modifier = modifier
     ) {
         Column(
@@ -150,11 +195,7 @@ fun HomeScreenContent(
                 .fillMaxSize()
                 .widthIn(max = 640.dp)
                 .verticalScroll(scrollState)
-                .padding(horizontal = 20.dp)
-                .padding(
-                    top = statusBarTop + 16.dp,
-                    bottom = contentBottomPadding.calculateBottomPadding() + 12.dp
-                )
+                .padding(start = 20.dp, end = 20.dp, top = statusBarTop + 16.dp)
                 .testTag("home_scroll_container"),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -211,7 +252,7 @@ fun HomeScreenContent(
                 ShreyGlassTextField(
                     value = urlInput,
                     onValueChange = onUrlChanged,
-                    placeholder = "Paste a media link",
+                    placeholder = "Paste video, playlist, or channel link",
                     onPasteClick = onPasteClick,
                     onClearClick = onClearClick,
                     onSubmit = onAnalyzeClick,
@@ -231,7 +272,7 @@ fun HomeScreenContent(
                 )
             }
 
-            // Dynamic Content Area: Empty / Analyzing / Preview / Error
+            // Dynamic Content Area: Empty / Analyzing / Ambiguous / Single / Playlist / Channel / Error
             AnimatedContent(
                 targetState = uiState,
                 transitionSpec = { fadeIn() togetherWith fadeOut() },
@@ -242,28 +283,44 @@ fun HomeScreenContent(
                         ShreyEmptyState(
                             icon = Icons.Outlined.AutoAwesome,
                             title = "Ready when you are",
-                            body = "Paste or share a supported link to inspect real available streams, choose your format, and save locally to your device.",
+                            body = "Paste or share a video, playlist, or YouTube channel link to inspect real streams, choose your format, and save locally to your device.",
                             modifier = Modifier.testTag("home_empty_state")
                         )
                     }
 
                     is HomeUiState.Analyzing -> {
+                        val (title, subtitle) = when (state.detectedType) {
+                            MediaSourceType.PLAYLIST ->
+                                "Inspecting playlist entries" to "Reading playlist items via flat yt-dlp extraction without downloading media…"
+                            MediaSourceType.CHANNEL ->
+                                "Inspecting YouTube channel" to "Discovering channel videos, Shorts, and completed streams without downloading media…"
+                            else ->
+                                "Inspecting media streams" to "Running local yt-dlp metadata extraction without downloading media…"
+                        }
                         ShreyGlassCard(
                             modifier = Modifier.testTag("home_analyzing_card"),
                             contentPadding = PaddingValues(24.dp)
                         ) {
                             Text(
-                                text = "Inspecting media streams",
+                                text = title,
                                 style = MaterialTheme.typography.titleMedium,
                                 color = palette.textPrimary
                             )
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                text = "Running local yt-dlp metadata extraction without downloading media…",
+                                text = subtitle,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = palette.textSecondary
                             )
                         }
+                    }
+
+                    is HomeUiState.AmbiguousUrl -> {
+                        AmbiguousUrlChoiceCard(
+                            state = state,
+                            onChooseSingleVideo = onChooseAmbiguousVideo,
+                            onChoosePlaylist = onChooseAmbiguousPlaylist
+                        )
                     }
 
                     is HomeUiState.Ready -> {
@@ -275,6 +332,38 @@ fun HomeScreenContent(
                             onThumbnailFormatSelected = onThumbnailFormatSelected,
                             onToggleTechnicalDetails = onToggleTechnicalDetails,
                             onStartDownload = onStartDownload,
+                            onOpenDownloads = onOpenDownloads
+                        )
+                    }
+
+                    is HomeUiState.PlaylistReady -> {
+                        PlaylistPreviewCard(
+                            state = state,
+                            onToggleEntry = onTogglePlaylistEntry,
+                            onSelectAll = onSelectAllPlaylist,
+                            onDeselectAll = onDeselectAllPlaylist,
+                            onLoadMore = onLoadMorePlaylist,
+                            onQualitySelected = onBulkQualitySelected,
+                            onAudioFormatSelected = onBulkAudioFormatSelected,
+                            onWifiOnlyChanged = onBulkWifiOnlyChanged,
+                            onStartPlaylistDownload = onStartPlaylistBatch,
+                            onOpenDownloads = onOpenDownloads
+                        )
+                    }
+
+                    is HomeUiState.ChannelReady -> {
+                        ChannelPreviewCard(
+                            state = state,
+                            onToggleTab = onToggleChannelTab,
+                            onScopeSelected = onChannelScopeSelected,
+                            onCustomLimitChanged = onChannelCustomLimitChanged,
+                            onLoadMore = onLoadMoreChannel,
+                            onQualitySelected = onBulkQualitySelected,
+                            onAudioFormatSelected = onBulkAudioFormatSelected,
+                            onWifiOnlyChanged = onBulkWifiOnlyChanged,
+                            onRequestConfirm = onRequestChannelConfirm,
+                            onDismissConfirm = onDismissChannelConfirm,
+                            onConfirmStart = onConfirmChannelBatch,
                             onOpenDownloads = onOpenDownloads
                         )
                     }
@@ -316,6 +405,12 @@ fun HomeScreenContent(
                     }
                 }
             }
+
+            Spacer(
+                modifier = Modifier
+                    .height(bottomScrollClearance)
+                    .testTag("home_bottom_scroll_spacer")
+            )
         }
     }
 }

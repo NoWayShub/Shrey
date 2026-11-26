@@ -8,9 +8,11 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
@@ -25,10 +27,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -38,6 +44,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.shrey.downloader.core.design.ShreyAmbientBackground
+import com.shrey.downloader.core.design.ShreyBottomBarDefaults
 import com.shrey.downloader.core.design.ShreyGlassBottomBar
 import com.shrey.downloader.core.design.ShreyNavDestination
 import com.shrey.downloader.feature.about.AboutScreen
@@ -60,10 +67,28 @@ import kotlinx.serialization.Serializable
 @Serializable data object LicensesRoute
 
 /**
- * Provides the exact, synchronously measured [Scaffold] bottom bar inset to all top-level screens
- * without capturing changing layout values inside [NavHost]'s graph builder lambda.
+ * Provides the exact, synchronously measured [Scaffold] bottom bar + navigation bar inset to all
+ * top-level screens without capturing changing layout values inside [NavHost]'s graph builder lambda.
  */
 val LocalShreyBottomBarPadding = compositionLocalOf { PaddingValues(0.dp) }
+
+/**
+ * Computes reliable scrollable bottom clearance that accounts for the floating bottom navigation
+ * bar height, the Android system gesture / 3-button navigation bar inset, and comfortable visual
+ * breathing room so no scrollable content is ever covered by the floating navigation bar.
+ */
+@Composable
+fun rememberShreyBottomScrollClearance(
+    contentBottomPadding: PaddingValues,
+    extraSpacing: Dp = ShreyBottomBarDefaults.ExtraScrollClearance
+): Dp {
+    val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val baseBottom = maxOf(
+        contentBottomPadding.calculateBottomPadding(),
+        navBarBottom
+    )
+    return baseBottom + extraSpacing
+}
 
 @Composable
 fun ShreyAppRoot(
@@ -96,6 +121,7 @@ fun ShreyAppRoot(
     val density = LocalDensity.current
     val isKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
     val showBottomBar = isTopLevelRoute && !isKeyboardVisible
+    var measuredBottomBarHeightPx by remember { mutableIntStateOf(0) }
 
     val destinations = remember(downloadsState.inProgressCount) {
         listOf(
@@ -149,7 +175,9 @@ fun ShreyAppRoot(
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            // Preserve top edge-to-edge drawing for the top gradual blur while always accounting
+            // for bottom system navigation / gesture insets in Scaffold innerPadding.
+            contentWindowInsets = WindowInsets.navigationBars,
             bottomBar = {
                 AnimatedVisibility(
                     visible = showBottomBar,
@@ -159,12 +187,32 @@ fun ShreyAppRoot(
                     ShreyGlassBottomBar(
                         destinations = destinations,
                         selectedId = selectedTabId,
-                        onSelect = navigateTopLevel
+                        onSelect = navigateTopLevel,
+                        modifier = Modifier.onSizeChanged { size ->
+                            if (size.height > 0) {
+                                measuredBottomBarHeightPx = size.height
+                            }
+                        }
                     )
                 }
             }
         ) { innerPadding ->
-            CompositionLocalProvider(LocalShreyBottomBarPadding provides innerPadding) {
+            val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+            val measuredBottomBarHeight = with(density) { measuredBottomBarHeightPx.toDp() }
+            val scaffoldBottom = innerPadding.calculateBottomPadding()
+            val resolvedBottomPadding = if (showBottomBar) {
+                maxOf(
+                    scaffoldBottom,
+                    measuredBottomBarHeight,
+                    ShreyBottomBarDefaults.MinBarHeight + navBarBottom
+                )
+            } else {
+                maxOf(scaffoldBottom, navBarBottom)
+            }
+            val effectiveBottomPadding = remember(resolvedBottomPadding) {
+                PaddingValues(bottom = resolvedBottomPadding)
+            }
+            CompositionLocalProvider(LocalShreyBottomBarPadding provides effectiveBottomPadding) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()

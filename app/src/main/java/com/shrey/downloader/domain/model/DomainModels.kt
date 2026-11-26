@@ -160,7 +160,10 @@ data class DownloadRequest(
     val thumbnailOutputFormat: ThumbnailOutputFormat = ThumbnailOutputFormat.ORIGINAL,
     val requiresMerge: Boolean = false,
     val destinationTreeUri: String? = null,
-    val createdAtMillis: Long = System.currentTimeMillis()
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val batchId: String? = null,
+    val mediaId: String? = null,
+    val relativeSubfolder: String? = null
 )
 
 data class DownloadProgress(
@@ -205,7 +208,10 @@ data class DownloadItem(
     val completedAt: Long?,
     val lastError: String?,
     val technicalError: String?,
-    val retryCount: Int
+    val retryCount: Int,
+    val batchId: String? = null,
+    val mediaId: String? = null,
+    val relativeSubfolder: String? = null
 )
 
 sealed interface DownloadResult {
@@ -400,4 +406,7 @@ data class ShreySettings(
     val allowMobileData: Boolean = true,
     val hapticsEnabled: Boolean = true,
     val notificationsEnabled: Boolean = true
-)
+) {
+    val wifiOnlyDownloads: Boolean
+        get() = !allowMobileData
+}

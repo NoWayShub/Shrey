@@ -66,6 +66,7 @@ import com.shrey.downloader.domain.model.DownloadItem
 import com.shrey.downloader.domain.model.DownloadMode
 import com.shrey.downloader.domain.model.LibraryFilter
 import com.shrey.downloader.navigation.LocalShreyBottomBarPadding
+import com.shrey.downloader.navigation.rememberShreyBottomScrollClearance
 
 @Composable
 fun LibraryScreen(
@@ -140,6 +141,7 @@ fun LibraryScreenContent(
 
     ShreyTopGradualBlurContainer(
         scrollProgress = topBlurProgress,
+        scrollOffsetProvider = { listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset },
         modifier = modifier
     ) {
         LazyColumn(
@@ -152,7 +154,7 @@ fun LibraryScreenContent(
                 start = 20.dp,
                 end = 20.dp,
                 top = statusBarTop + 16.dp,
-                bottom = contentBottomPadding.calculateBottomPadding() + 12.dp
+                bottom = rememberShreyBottomScrollClearance(contentBottomPadding)
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

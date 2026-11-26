@@ -143,6 +143,51 @@ class ApkUpdateVerifier(
         )
     }
 
+    data class ApkQuickVerificationReport(
+        val isValid: Boolean,
+        val packageMatches: Boolean,
+        val signatureMatches: Boolean,
+        val sha256Matches: Boolean,
+        val reason: String? = null
+    )
+
+    fun verifyDownloadedApk(
+        context: Context,
+        apkFile: File,
+        expectedSha256Hex: String? = null,
+        installedVersionCode: Long = 0L
+    ): ApkQuickVerificationReport {
+        if (!apkFile.exists() || !apkFile.isFile || apkFile.length() <= 0L) {
+            return ApkQuickVerificationReport(
+                isValid = false,
+                packageMatches = false,
+                signatureMatches = false,
+                sha256Matches = false,
+                reason = "Downloaded APK file is missing or empty."
+            )
+        }
+        val actualSha256 = SafeEngineUpdater.computeSha256(apkFile)
+        val shaMatches = expectedSha256Hex.isNullOrBlank() ||
+            actualSha256.equals(expectedSha256Hex.trim(), ignoreCase = true)
+
+        return when (val result = verifyApkFile(context, apkFile, installedVersionCode)) {
+            is ApkVerificationResult.Verified -> ApkQuickVerificationReport(
+                isValid = shaMatches,
+                packageMatches = true,
+                signatureMatches = true,
+                sha256Matches = shaMatches,
+                reason = if (shaMatches) null else "APK SHA-256 checksum mismatch."
+            )
+            is ApkVerificationResult.Rejected -> ApkQuickVerificationReport(
+                isValid = false,
+                packageMatches = false,
+                signatureMatches = false,
+                sha256Matches = shaMatches,
+                reason = result.reason
+            )
+        }
+    }
+
     /**
      * Publishes a verified APK into the user's Downloads/Shrey folder via MediaStore (zero extra permissions)
      * so the user can inspect or install it through Android's standard system confirmation flow.
